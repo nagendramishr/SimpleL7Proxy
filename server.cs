@@ -17,6 +17,8 @@ public class Server
     {
         HttpStatusCode.OK,
         HttpStatusCode.Unauthorized,
+        HttpStatusCode.Forbidden,
+        HttpStatusCode.NotFound,
     };
 
 
