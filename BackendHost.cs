@@ -27,17 +27,24 @@ public class BackendHost
             hostname = "http://" + host;
         }
 
+        // if host ends with a slash, remove it
+        if (hostname.EndsWith("/"))
+        {
+            hostname = hostname.Substring(0, hostname.Length - 1);
+        }
+
         // parse the host, prototol and port
         Uri uri = new Uri(hostname);
         protocol = uri.Scheme;
         port = uri.Port;
         host = uri.Host;
 
-        probe_path = probe_path ?? "echo/resource?param1=sample";
+        probe_path = probepath ?? "echo/resource?param1=sample";
         if (probe_path.StartsWith("/"))
         {
             probe_path = probe_path.Substring(1);
         }
+        Console.WriteLine($"Adding backend host: {this.host}  probe path: {this.probe_path}");
     }
     public override string ToString()
     {
