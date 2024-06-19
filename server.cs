@@ -65,6 +65,16 @@ public class Server
 
         // Make a local copy of the active hosts
         var activeHosts = _backends.GetActiveHosts().ToList();
+        MemoryStream? ms;
+
+        // check if rewind the stream is possible, if not, then we'll cache the body for later
+        if (!body.CanSeek)
+        {
+            ms = new MemoryStream();
+            await body.CopyToAsync(ms);
+            ms.Position = 0;
+            body = ms;
+        }
 
         // Console.WriteLine($"Active Host List: {string.Join(", ", activeHosts)}");
 
@@ -93,7 +103,7 @@ public class Server
                 }
 
                 //Console.WriteLine("Added headers to the request");
-                //Console.WriteLine($"Making a call to: {host.url} with headers: {string.Join(", ", proxyRequest.Headers.Select(k => $"{k.Key}: {string.Join(", ", k.Value)}"))}");
+                //Console.WriteLine($"Making a call to: {urlWithPath} with headers: {string.Join(", ", proxyRequest.Headers.Select(k => $"{k.Key}: {string.Join(", ", k.Value)}"))}");
 
                 using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(_client.Timeout.TotalMilliseconds));
                 var proxyResponse = await _client.SendAsync(proxyRequest, cts.Token);
@@ -102,7 +112,7 @@ public class Server
                 // Check if the status code of the response is in the set of allowed status codes
                 if (!allowedStatusCodes.Contains(proxyResponse.StatusCode))
                 {
-                    // rewind the stream
+  
                     body.Position = 0;
                     Console.WriteLine($"Trying next host: Response: {proxyResponse.StatusCode}");
                     continue;
