@@ -11,6 +11,7 @@ public class Server
     private string _port;
     private Backends _backends;
     private HttpClient _client = new HttpClient();
+    private static bool _debug=false;
 
     // Define the set of status codes that you want to allow
     public static HashSet<HttpStatusCode> allowedStatusCodes = new HashSet<HttpStatusCode>
@@ -21,13 +22,11 @@ public class Server
         HttpStatusCode.NotFound,
     };
 
-    private static bool _debug=false;
 
     public Server(string port, Backends backends, HttpClient client)
     {
         _backends = backends;
         _port = port;
-        //_thread = new Thread(new ThreadStart(Run));
         _client = client;
     }
 
@@ -66,6 +65,8 @@ public class Server
     public async Task ProxyRequestAsync(string method, string path, WebHeaderCollection headers, Stream body, HttpListenerResponse response)
     {
 
+        bool _ldebug = _debug;
+
         // Make a local copy of the active hosts
         var activeHosts = _backends.GetActiveHosts().ToList();
         MemoryStream? ms;
@@ -80,6 +81,12 @@ public class Server
         }
 
         // Console.WriteLine($"Active Host List: {string.Join(", ", activeHosts)}");
+
+        // set ldebug to true if the "S7pDebug" header is set to "true"
+        if (headers["S7PDEBUG"] == "true")
+        {
+            _ldebug = true;
+        }
 
         foreach (var host in activeHosts)
         {
@@ -103,7 +110,7 @@ public class Server
 
                 foreach (var key in headers.AllKeys)
                 {
-                    if (_debug) Console.WriteLine($" > {key} : {headers[key]}");
+                    if (_ldebug) Console.WriteLine($" > {key} : {headers[key]}");
 
                     if (key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase) || 
                         key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase))
@@ -116,7 +123,7 @@ public class Server
                     }
                 }
                 proxyRequest.Headers.ConnectionClose = true;
-                if (_debug) {
+                if (_ldebug) {
                     foreach (var header in proxyRequest.Headers)
                     {
                         Console.WriteLine($"  | {header.Key} : {string.Join(", ", header.Value)}");
@@ -142,7 +149,18 @@ public class Server
 
                 // Get a stream to the response body
                 var responseBody = await proxyResponse.Content.ReadAsStreamAsync();
-                Console.WriteLine($"Got the response body: {responseBody.Length} bytes, with headers: {string.Join(", ", proxyRequest.Headers.Select(k => $"{k.Key}: {string.Join(", ", k.Value)}"))}");
+
+                if (_ldebug) {
+                    foreach (var header in proxyResponse.Headers)
+                    {
+                        Console.WriteLine($"< {header.Key} : {string.Join(", ", header.Value)}");
+                    }
+                    foreach (var header in proxyResponse.Content.Headers)
+                    {
+                        Console.WriteLine($"< {header.Key} : {string.Join(", ", header.Value)}");
+                    }
+                }
+                //Console.WriteLine($"Got the response body: {responseBody.Length} bytes, with headers: {string.Join(", ", proxyRequest.Headers.Select(k => $"{k.Key}: {string.Join(", ", k.Value)}"))}");
 
                 // Copy across all the response headers to the client
                 foreach (var header in proxyResponse.Headers)
@@ -159,10 +177,7 @@ public class Server
                     await responseBody.CopyToAsync(output);
                 }
                 
-                if (Program.telemetryClient is null)
-                    Console.WriteLine($"{DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.ffffff")} {urlWithPath}  {response.Headers["Content-Length"]} {response.StatusCode}");
-                else
-                    Console.WriteLine($"{urlWithPath}  {response.Headers["Content-Length"]} {response.StatusCode}");
+                Console.WriteLine($"{urlWithPath}  {response.Headers["Content-Length"]} {response.StatusCode}");
 
                 return;
             }
@@ -181,7 +196,7 @@ public class Server
                 Console.WriteLine($"Error: {e.Message}");
             }
         }
-        Console.WriteLine($"{DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.ffffff")} {path}  - 503");
+        Console.WriteLine($"{path}  - 503");
 
         // No active hosts were able to handle the request
         response.StatusCode = 503;
