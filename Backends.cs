@@ -104,11 +104,10 @@ public class Backends
 
             if ( statusChanged )
             {
-                if (Program.telemetryClient is null)
-                {
-                    Console.WriteLine($"\n\n{DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.ffffff")} ============ Host Status =========");
-                }
-                        // Loop through the active hosts and output latency
+                Console.WriteLine("\n\n");
+                Console.WriteLine($"\n\n============ Host Status =========");
+
+                // Loop through the active hosts and output latency
                 foreach (var host in activeHosts)
                 {
                     Console.WriteLine($"Host: {host.url} Latency: {Math.Round(host.AverageLatency(), 3)}ms");

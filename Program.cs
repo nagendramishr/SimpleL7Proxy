@@ -50,7 +50,7 @@ public class Program
             Program.telemetryClient = new TelemetryClient(configuration);
 
             Console.WriteLine("AppInsights initialized");
-            Console.SetOut(new AppInsightsTextWriter(Program.telemetryClient));
+            Console.SetOut(new AppInsightsTextWriter(Program.telemetryClient, Console.Out));
         }
 
         // startup the backend poller
