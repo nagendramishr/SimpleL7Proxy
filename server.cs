@@ -21,6 +21,7 @@ public class Server
         HttpStatusCode.NotFound,
     };
 
+    private static bool _debug=false;
 
     public Server(string port, Backends backends, HttpClient client)
     {
@@ -92,20 +93,39 @@ public class Server
                 // make sure there is a slash at the beginning of the path
 
                 var urlWithPath = new UriBuilder(host.url){Path = path}.Uri.AbsoluteUri;
+                urlWithPath = System.Net.WebUtility.UrlDecode(urlWithPath);
+
+                //Console.WriteLine("Got the stream content");
                 var proxyRequest = new HttpRequestMessage(new HttpMethod(method), urlWithPath)
                 {   
                     Content = new StreamContent(body)
                 };
 
-                //Console.WriteLine("Got the stream content");
-
                 foreach (var key in headers.AllKeys)
                 {
-                    proxyRequest.Headers.TryAddWithoutValidation(key, headers[key]);
-                }
+                    if (_debug) Console.WriteLine($" > {key} : {headers[key]}");
 
-                //Console.WriteLine("Added headers to the request");
-                //Console.WriteLine($"Making a call to: {urlWithPath} with headers: {string.Join(", ", proxyRequest.Headers.Select(k => $"{k.Key}: {string.Join(", ", k.Value)}"))}");
+                    if (key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase) || 
+                        key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase))
+                    {
+                        proxyRequest.Content.Headers.TryAddWithoutValidation(key, headers[key]);
+                    }
+                    else
+                    {
+                        proxyRequest.Headers.TryAddWithoutValidation(key, headers[key]);
+                    }
+                }
+                proxyRequest.Headers.ConnectionClose = true;
+                if (_debug) {
+                    foreach (var header in proxyRequest.Headers)
+                    {
+                        Console.WriteLine($"  | {header.Key} : {string.Join(", ", header.Value)}");
+                    }
+                    foreach (var header in proxyRequest.Content.Headers)
+                    {
+                        Console.WriteLine($"  | {header.Key} : {string.Join(", ", header.Value)}");
+                    }
+                }
 
                 using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(_client.Timeout.TotalMilliseconds));
                 var proxyResponse = await _client.SendAsync(proxyRequest, cts.Token);
@@ -122,7 +142,7 @@ public class Server
 
                 // Get a stream to the response body
                 var responseBody = await proxyResponse.Content.ReadAsStreamAsync();
-                //Console.WriteLine($"Got the response body: {responseBody.Length} bytes, with headers: {string.Join(", ", proxyRequest.Headers.Select(k => $"{k.Key}: {string.Join(", ", k.Value)}"))}");
+                Console.WriteLine($"Got the response body: {responseBody.Length} bytes, with headers: {string.Join(", ", proxyRequest.Headers.Select(k => $"{k.Key}: {string.Join(", ", k.Value)}"))}");
 
                 // Copy across all the response headers to the client
                 foreach (var header in proxyResponse.Headers)
@@ -141,6 +161,8 @@ public class Server
                 
                 if (Program.telemetryClient is null)
                     Console.WriteLine($"{DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.ffffff")} {urlWithPath}  {response.Headers["Content-Length"]} {response.StatusCode}");
+                else
+                    Console.WriteLine($"{urlWithPath}  {response.Headers["Content-Length"]} {response.StatusCode}");
 
                 return;
             }

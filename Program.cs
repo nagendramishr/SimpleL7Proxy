@@ -14,7 +14,7 @@ public class Program
     private static HttpClient hc = new HttpClient();
     Program program = new Program();
     public static TelemetryClient? telemetryClient; 
-
+//    public static? AppInsightsTextWriter AITW;
 
 
     public static void Main(string[] args)
@@ -27,6 +27,7 @@ public class Program
             {
                 try {
                     var bh = new BackendHost(hostname, OS.Environment.GetEnvironmentVariable("Probe_path" + i));
+                    
                     hosts.Add( bh );
                 } catch (System.UriFormatException e) {
                     Console.WriteLine($"Could not add {hostname} : {e.Message}");
