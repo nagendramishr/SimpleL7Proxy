@@ -1,10 +1,9 @@
 # SimpleL7Proxy
 
-The SimpleL7Proxy is a lightweight, efficient Layer 7 proxy designed to route network traffic between clients and servers. It operates at the application layer (Layer 7) of the OSI model, enabling it to inspect, and route network packets.  The service does not modify any headers 
+The SimpleL7Proxy is a lightweight, efficient proxy designed to route network traffic between clients and servers. It operates at the application layer (Layer 7) of the OSI model, enabling it to route HTTP(s) requests. The service passes through every header it receives with the exception of the Host header, which needs to match the back-end service. It is ideal for web applications that need load balancing, SSL termination, or proxying to a number of back-end hosts. The server will also calculate the lowest latency for each backend and connect to the lowest latency host first.   In the diagram below, a client connected to the proxy which has 3 backend hosts.  The proxy identified the host with the lowest latency ( Host 2 ) to make the request to.
 
-This proxy is capable of handling HTTP/HTTPS requests and responses, making it ideal for web applications. It can be used for load balancing, SSL termination, and other network-related tasks.
+![image](https://github.com/nagendramishr/SimpleL7Proxy/assets/81572024/d2b09ebb-1bce-41a7-879a-ac90aa5ae227)
 
-The project is written in C#, making use of the .NET Core framework for cross-platform compatibility. It is designed with simplicity and performance in mind, providing a straightforward way to manage network traffic at the application layer.
 
 ## Features
 -HTTP/HTTPS traffic routing
@@ -14,27 +13,26 @@ The project is written in C#, making use of the .NET Core framework for cross-pl
 -Simple, easy-to-understand codebase
 
 ## Usage
-To use SimpleL7Proxy, you'll need to have .NET Core installed on your machine. Once installed, you can clone this repository, build the project, and run the resulting binary to start the proxy.
+SimpleL7Proxy can be run standalone on the commandline or it can be deployed as a container.  All configuration is passed to it via environment variables.  When running, the server will periodically display the current back-end latencies.
 
-Please refer to the documentation for more detailed instructions and usage examples.
 
 ### Environment Variables:
 
-These environment variables are used to configure the backend hosts for the proxy. Here's a summary of how each one is used:
-
-**Host_n_** : These variables are used to specify the hostnames of the backend servers. Up to 9 backend hosts can be specified. If a hostname is provided, the application creates a new BackendHost instance and adds it to the hosts list.  The hostname should be in the form http(s)://fqdnhostname and DNS should resolve these to an IP address.  In the case that DNS is not available, provide the optional **IP_n_** headers. ( see below )
-
-**IP_n_** : These optional variables are used to specify the ip address of the backend servers.  In scenarios where DNS is not available, this setting allows the backend to be specified by the ip address.  Connection the connection has been established, the **Host_n_** header is used to form the web request. [ NOT IMPLEMENTED ]
-
-**Probe_path_n_** : These variables are used to specify the probe paths for the corresponding backend hosts. If a Host variable is set, the application will attempt to read the corresponding Probe_path variable when creating the BackendHost instance.  If it's not set, the application defaults to use echo/resource?param1=sample.
-
-**Port** : This variable is used to specify the port number that the server will listen on. If it's not set, the application defaults to port 443.
-
-**PollInterval** : This variable is used to specify the interval (in milliseconds) at which the application will poll the backend servers. If it's not set, the application defaults to 15000 milliseconds (15 seconds).
-
-**APPINSIGHTS_CONNECTIONSTRING**: This variable is used to specify the connection string for Azure Application Insights. If it's set, the application initializes Awill send logs to the application insights instance.
-
-**Success-rate** : The percentage success rate required to be used for proxying.  Any host whose success rate is lower will not be in rotation.
+| Variable | Description | Default |
+| -------- | ----------- | ------- |
+|**Host1, Host2, ...** | The hostnames of the backend servers. Up to 9 backend hosts can be specified. If a hostname is provided, the application creates a new BackendHost instance and adds it to the hosts list.  The hostname should be in the form http(s)://fqdnhostname and DNS should resolve these to an IP address.  | None |
+| |
+|**Probe_path1, Probe_path2, ...** | Specifies the probe paths for the corresponding backend hosts. If a Host variable is set, the application will attempt to read the corresponding Probe_path variable when creating the BackendHost instance. | echo/resource?param1=sample |
+| |
+|**Port** | Specifies the port number that the server will listen on. | 443 |
+| |
+|**PollInterval** | This variable is used to specify the interval (in milliseconds) at which the application will poll the backend servers. | 15000 |
+| |
+|**APPINSIGHTS_CONNECTIONSTRING** | This variable is used to specify the connection string for Azure Application Insights. If it's set, the application initializes Awill send logs to the application insights instance. |  None |
+| |
+|**Success-rate** | The percentage success rate required to be used for proxying.  Any host whose success rate is lower will not be in rotation. | 80 |
+| |
+|**Timeout** | The connection timeout for each backend.  If the proxy times out, it will try the next host. | 3000 |
 
 ### Example:
 
@@ -42,8 +40,65 @@ Port=8000
 Host1=https://localhost:3000
 Host2=http://localhost:5000
 PollInterval=1500
+Timeout=3000
 
-This will create a listener on port 8000 and will check the health of the two hosts (https://localhost:3000 and http://localhost:5000) every 1.5 seconds.  Any incoming requests will be proxied to the server with the lowest latency ( as measured every PollInterval).  This will not log to Application Insights.
+This will create a listener on port 8000 and will check the health of the two hosts (https://localhost:3000 and http://localhost:5000) every 1.5 seconds.  Any incoming requests will be proxied to the server with the lowest latency ( as measured every PollInterval). The first request will timeout after 3 seconds. If the second request also timesout, the service will return error code 503.
+
+### Running it on the command line
+
+**Pre-requisutes:**
+- Cloned repo
+- Dotnet SDK 8.0
+
+**Run it**
+```
+export PORT=8000
+export Host1=https://localhost:3000
+export Host2=http://localhost:5000
+export Timeout=2000
+
+dotnet run
+```
+
+## Running it as a container
+
+**Pre-requisites:**
+- Cloned repo
+- Docker
+
+**Run it**
+```
+docker build -t proxy -f Dockerfile .
+docker run -p 8000:443 -e "Host1=https://localhost:3000" -e "Host2=http://localhost:5000" -e "Timeout=2000" proxy
+```
+
+## Deploy the container to Azure Container Apps
+
+**Pre-requisites:**
+- Cloned repo
+- Docker
+- az cli ( logged into azure account )
+
+**Deploy it**
+```
+# FILL IN THE NAME OF YOUR ACR HERE
+export ACR=<ACR>
+export GROUP=simplel7proxyg
+export ACENV=simplel7proxyenv
+export ACANAME=simplel7proxy
+az acr login --name $ACR.azurecr.io
+docker build -t $ACR.azurecr.io/myproxy:v1 -f Dockerfile .
+docker push $ACR.azurecr.io/myproxy:v1
+
+ACR_CREDENTIALS=$(az acr credential show --name $ACR)
+export ACR_USERNAME=$(echo $ACR_CREDENTIALS | jq -r '.username')
+export ACR_PASSWORD=$(echo $ACR_CREDENTIALS | jq -r '.passwords[0].value')
+
+az group create --name $GROUP --location eastus
+az containerapp env create --name $ACENV --resource-group $GROUP --location eastus
+az containerapp create --name $ACANAME --resource-group $GROUP --environment $ACENV --image $ACR.azurecr.io/myproxy:v1 --target-port 443 --ingress external --registry-server $ACR.azurecr.io --query properties.configuration.ingress.fqdn --registry-username $ACR_USERNAME --registry-password $ACR_PASSWORD --env-vars Host1=https://localhost:3000 Host2=http://localhost:5000
+
+```
 
 
 
