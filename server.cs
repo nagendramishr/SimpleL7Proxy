@@ -8,7 +8,7 @@ using System.Collections.Generic;
 
 public class Server
 {
-    private string _port;
+    private int _port;
     private Backends _backends;
     private HttpClient _client = new HttpClient();
     private static bool _debug=false;
@@ -23,7 +23,7 @@ public class Server
     };
 
 
-    public Server(string port, Backends backends, HttpClient client)
+    public Server(int port, Backends backends, HttpClient client)
     {
         _backends = backends;
         _port = port;
@@ -53,7 +53,19 @@ public class Server
                 //Console.WriteLine($"Received {request.HttpMethod} request");
                 //Console.WriteLine($"Received Headers: {string.Join(", ", request.Headers.AllKeys.Select(k => $"{k}: {request.Headers[k]}"))}");
                 try {
-                    await ProxyRequestAsync(request.HttpMethod, request.Url.PathAndQuery, (WebHeaderCollection) request.Headers, request.InputStream, response);
+
+                    if (request.Url != null)
+                    {   
+                        await ProxyRequestAsync(request.HttpMethod, request.Url.PathAndQuery, (WebHeaderCollection) request.Headers, request.InputStream, response);
+                    }
+                    else
+                    {
+                        response.StatusCode = 400;
+                        using (var writer = new StreamWriter(response.OutputStream))
+                        {
+                            await writer.WriteAsync("Bad Request");
+                        }
+                    } 
                 } catch (Exception e) {
                     Program.telemetryClient?.TrackException(e);
                     Console.WriteLine($"Error: {e.StackTrace}");
@@ -112,8 +124,7 @@ public class Server
                 {
                     if (_ldebug) Console.WriteLine($" > {key} : {headers[key]}");
 
-                    if (key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase) || 
-                        key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase))
+                    if (key.StartsWith("Content-", StringComparison.OrdinalIgnoreCase))
                     {
                         proxyRequest.Content.Headers.TryAddWithoutValidation(key, headers[key]);
                     }
