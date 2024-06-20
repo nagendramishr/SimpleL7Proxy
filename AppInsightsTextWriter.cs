@@ -16,8 +16,9 @@ public class AppInsightsTextWriter : TextWriter
 
     public override void WriteLine(string? value)
     {
+        if (value == null) return;
         base.WriteLine(value);
-        string timestamp = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.ffffff");
+        string timestamp = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
 
         if (value.StartsWith("\n\n")) {
             _innerTextWriter.WriteLine($"{timestamp} {value.Substring(2)}");
