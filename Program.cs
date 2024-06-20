@@ -14,8 +14,6 @@ public class Program
     private static HttpClient hc = new HttpClient();
     Program program = new Program();
     public static TelemetryClient? telemetryClient; 
-//    public static? AppInsightsTextWriter AITW;
-
 
     public static void Main(string[] args)
     {
@@ -26,7 +24,8 @@ public class Program
             if (hostname != null)
             {
                 try {
-                    var bh = new BackendHost(hostname, OS.Environment.GetEnvironmentVariable("Probe_path" + i));
+                    // IP is currently not supported, it will be ignored.
+                    var bh = new BackendHost(hostname, OS.Environment.GetEnvironmentVariable("Probe_path" + i), OS.Environment.GetEnvironmentVariable("IP" + i));
                     
                     hosts.Add( bh );
                 } catch (System.UriFormatException e) {
@@ -37,9 +36,25 @@ public class Program
         }
 
         // read the port number
-        var port = OS.Environment.GetEnvironmentVariable("Port") ?? "443";
+        if (!int.TryParse(OS.Environment.GetEnvironmentVariable("Port"), out var port))
+        {
+            port = 443; // Default port
+            Console.WriteLine($"Invalid or missing Port. Using default.");
+        }
+
         // read the backend polling interval
-        var interval = OS.Environment.GetEnvironmentVariable("PollInterval") ?? "15000";
+        if (!int.TryParse(OS.Environment.GetEnvironmentVariable("PollInterval"), out var interval))
+        {
+            interval = 15000; // Default interval
+            Console.WriteLine($"Invalid or missing PollInterval. Using default.");
+        }
+
+        // read the success rate as an integer or default to 80 in case of error
+        if (!int.TryParse(OS.Environment.GetEnvironmentVariable("SuccessRate"), out var successRate))
+        {
+            successRate = 80; // Default success rate
+            Console.WriteLine($"Invalid or missing SuccessRate. Using default.");
+        }
 
         var aiConnectionString = OS.Environment.GetEnvironmentVariable("APPINSIGHTS_CONNECTIONSTRING");
         if (aiConnectionString != null)
@@ -53,8 +68,10 @@ public class Program
             Console.SetOut(new AppInsightsTextWriter(Program.telemetryClient, Console.Out));
         }
 
+        Console.WriteLine($"Starting SimpleL7Proxy: Port: {port}, PollInterval: {interval}, SuccessRate: {successRate}"); 
+
         // startup the backend poller
-        var backends = new Backends(hosts, hc, int.Parse(interval));
+        var backends = new Backends(hosts, hc, interval, successRate);
         backends.Start();
 
         var server = new Server(port, backends, hc);
