@@ -92,8 +92,6 @@ public class Server
             body = ms;
         }
 
-        // Console.WriteLine($"Active Host List: {string.Join(", ", activeHosts)}");
-
         // set ldebug to true if the "S7pDebug" header is set to "true"
         if (headers["S7PDEBUG"] == "true")
         {
@@ -108,13 +106,11 @@ public class Server
                 headers.Set("Host", host.host);
             
                 // Make a call to https://host/path using the headers and body, read the response as a stream
-                // Console.WriteLine($"Trying: {host.url}");
                 // make sure there is a slash at the beginning of the path
 
                 var urlWithPath = new UriBuilder(host.url){Path = path}.Uri.AbsoluteUri;
                 urlWithPath = System.Net.WebUtility.UrlDecode(urlWithPath);
 
-                //Console.WriteLine("Got the stream content");
                 var proxyRequest = new HttpRequestMessage(new HttpMethod(method), urlWithPath)
                 {   
                     Content = new StreamContent(body)
@@ -147,7 +143,6 @@ public class Server
 
                 using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(_client.Timeout.TotalMilliseconds));
                 var proxyResponse = await _client.SendAsync(proxyRequest, cts.Token);
-                //Console.WriteLine("Got a response");
 
                 // Check if the status code of the response is in the set of allowed status codes
                 if (!allowedStatusCodes.Contains(proxyResponse.StatusCode))
@@ -171,7 +166,6 @@ public class Server
                         Console.WriteLine($"< {header.Key} : {string.Join(", ", header.Value)}");
                     }
                 }
-                //Console.WriteLine($"Got the response body: {responseBody.Length} bytes, with headers: {string.Join(", ", proxyRequest.Headers.Select(k => $"{k.Key}: {string.Join(", ", k.Value)}"))}");
 
                 // Copy across all the response headers to the client
                 foreach (var header in proxyResponse.Headers)
@@ -180,8 +174,6 @@ public class Server
                 }
 
                 response.StatusCode = (int)proxyResponse.StatusCode;
-
-                //Console.WriteLine($"Response status code: {response.StatusCode}");
 
                 using (var output = response.OutputStream)
                 {

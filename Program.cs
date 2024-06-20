@@ -39,21 +39,29 @@ public class Program
         if (!int.TryParse(OS.Environment.GetEnvironmentVariable("Port"), out var port))
         {
             port = 443; // Default port
-            Console.WriteLine($"Invalid or missing Port. Using default.");
+            Console.WriteLine($"Invalid or missing Port. Using default: {port}");
         }
 
         // read the backend polling interval
         if (!int.TryParse(OS.Environment.GetEnvironmentVariable("PollInterval"), out var interval))
         {
             interval = 15000; // Default interval
-            Console.WriteLine($"Invalid or missing PollInterval. Using default.");
+            Console.WriteLine($"Invalid or missing PollInterval. Using default: {interval}");
         }
 
         // read the success rate as an integer or default to 80 in case of error
         if (!int.TryParse(OS.Environment.GetEnvironmentVariable("SuccessRate"), out var successRate))
         {
             successRate = 80; // Default success rate
-            Console.WriteLine($"Invalid or missing SuccessRate. Using default.");
+            Console.WriteLine($"Invalid or missing SuccessRate. Using default: {successRate}");
+        }
+
+        // Read http timeout for the HTTP client 
+        if (!int.TryParse(OS.Environment.GetEnvironmentVariable("Timeout"), out var timeout))
+        {
+            timeout=3000;
+            hc.Timeout = TimeSpan.FromMilliseconds(timeout);
+            Console.WriteLine($"Invalid or missing SuccessRate. Using default: {hc.Timeout}");
         }
 
         var aiConnectionString = OS.Environment.GetEnvironmentVariable("APPINSIGHTS_CONNECTIONSTRING");
@@ -68,7 +76,7 @@ public class Program
             Console.SetOut(new AppInsightsTextWriter(Program.telemetryClient, Console.Out));
         }
 
-        Console.WriteLine($"Starting SimpleL7Proxy: Port: {port}, PollInterval: {interval}, SuccessRate: {successRate}"); 
+        Console.WriteLine($"Starting SimpleL7Proxy: Port: {port}, PollInterval: {interval}, SuccessRate: {successRate} Timeout: {hc.Timeout}"); 
 
         // startup the backend poller
         var backends = new Backends(hosts, hc, interval, successRate);
@@ -86,13 +94,5 @@ public class Program
             Console.WriteLine($"Stack Trace: {e.StackTrace}");
         }
 
-        // Read http timeout from environment variable
-        var timeout = OS.Environment.GetEnvironmentVariable("Timeout");
-        if (timeout != null)
-        {
-            //update the timeout for the client
-            hc.Timeout = TimeSpan.FromMilliseconds(int.Parse(timeout));
-            Console.WriteLine($"Timeout set to {hc.Timeout}");
-        }
     }
 }
