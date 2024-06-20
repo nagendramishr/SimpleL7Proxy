@@ -13,18 +13,22 @@ public class Backends
 
     private HttpClient _client = new HttpClient();
     private int _interval;
+    private static bool _debug=false;
 
-    public Backends(List<BackendHost> hosts, HttpClient client, int interval)
+    private static double _successRate;
+    private static DateTime _lastStatusDisplay = DateTime.Now;
+
+    public Backends(List<BackendHost> hosts, HttpClient client, int interval, int successRate)
     {
         _hosts = hosts;
         _client = client;
         _activeHosts = new List<BackendHost>();
         _interval = interval;
+        _successRate = successRate / 100.0;
     }
 
     public void Start()
     {
-//        _thread.Start();
         Task.Run(() => Run());
 
     }   
@@ -40,26 +44,28 @@ public class Backends
 
         while (true)
         {
-            var activeHosts = new List<BackendHost>();
+            //var activeHosts = new List<BackendHost>();
             bool statusChanged = false;
             bool currentStatus=false;
 
             foreach (var host in _hosts)
             {
-                //Console.WriteLine($"Checking host {host.url + host.probe_path}");
+                if (_debug)
+                    Console.WriteLine($"Checking host {host.url + host.probe_path}");
 
+                currentStatus = false;
                 try {
                     // Start the stopwatch
                     var stopwatch = Stopwatch.StartNew();
                     currentStatus = false;
 
                     using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(_client.Timeout.TotalMilliseconds));
-                    var response = await _client.GetAsync(host.url + host.probe_path, cts.Token);
+                    var response = await _client.GetAsync(host.probeurl, cts.Token);
 
                     // Stop the stopwatch and calculate the latency
                     stopwatch.Stop();
                     var latency = stopwatch.Elapsed.TotalMilliseconds;
-                    activeHosts.Add(host);
+                    //activeHosts.Add(host);
 
                     // Update the host with the new latency
                     host.AddLatency(latency);
@@ -93,25 +99,27 @@ public class Backends
                 host.AddCallSuccess(currentStatus);
             }
 
-
             // update the active hosts
-            _activeHosts.Clear();
+            //_activeHosts.Clear();
 
+            // Find hosts that have a success rate over 80%
+            _activeHosts = _hosts.Where(h => h.SuccessRate() > _successRate).ToList();
+            // Sort the active hosts based on low latency  
+            _activeHosts.Sort((a, b) => a.AverageLatency().CompareTo(b.AverageLatency()));
+            //_activeHosts.AddRange(activeHosts);
 
-            // Sort the active hosts based on low latency and high success rate 
-            activeHosts.Sort((a, b) => a.AverageLatency().CompareTo(b.AverageLatency()));
-            _activeHosts.AddRange(activeHosts);
-
-            if ( statusChanged )
+            if ( statusChanged || (DateTime.Now - _lastStatusDisplay).TotalSeconds > 60)
             {
                 Console.WriteLine("\n\n");
                 Console.WriteLine($"\n\n============ Host Status =========");
 
                 // Loop through the active hosts and output latency
-                foreach (var host in activeHosts)
+                foreach (var host in _activeHosts)
                 {
-                    Console.WriteLine($"Host: {host.url} Latency: {Math.Round(host.AverageLatency(), 3)}ms");
+                    Console.WriteLine($"Host: {host.url} Latency: {Math.Round(host.AverageLatency(), 3)}ms  Success Rate: {Math.Round(host.SuccessRate() * 100, 2)}%");
                 }
+
+                _lastStatusDisplay = DateTime.Now;
             }
 
             Thread.Sleep(_interval);
