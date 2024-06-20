@@ -17,14 +17,14 @@ public class AppInsightsTextWriter : TextWriter
     public override void WriteLine(string? value)
     {
         base.WriteLine(value);
+        string timestamp = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.ffffff");
 
-        if (value =="\n\n") {
-            _innerTextWriter.WriteLine($"{value}");
-            return;
+        if (value.StartsWith("\n\n")) {
+            _innerTextWriter.WriteLine($"{timestamp} {value.Substring(2)}");
+        } else {
+            _telemetryClient.TrackTrace(value);
+            _innerTextWriter.WriteLine($"{timestamp} {value}");
         }
-
-        _telemetryClient.TrackTrace(value);
-        _innerTextWriter.WriteLine($"{DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.ffffff")} {value}");
     }
 
     public override Encoding Encoding => Encoding.UTF8;
