@@ -5,8 +5,9 @@ using System.Linq;
 using System.Threading;
 using System.Collections.Generic;
 using System.Diagnostics;
+using Microsoft.Extensions.Options;
 
-public class Backends
+public class Backends : IBackendService
 {
     private List<BackendHost> _hosts;
     private List<BackendHost> _activeHosts;
@@ -18,13 +19,21 @@ public class Backends
     private static double _successRate;
     private static DateTime _lastStatusDisplay = DateTime.Now;
 
-    public Backends(List<BackendHost> hosts, HttpClient client, int interval, int successRate)
+    //public Backends(List<BackendHost> hosts, HttpClient client, int interval, int successRate)
+    public Backends(IOptions<BackendOptions> options)
     {
-        _hosts = hosts;
-        _client = client;
+        if (options == null) throw new ArgumentNullException(nameof(options));
+        if (options.Value == null) throw new ArgumentNullException(nameof(options.Value));
+        if (options.Value.Hosts == null) throw new ArgumentNullException(nameof(options.Value.Hosts));
+        if (options.Value.Client == null) throw new ArgumentNullException(nameof(options.Value.Client));
+
+        var bo = options.Value; // Access the IBackendOptions instance
+
+        _hosts = bo.Hosts;
+        _client = bo.Client;
         _activeHosts = new List<BackendHost>();
-        _interval = interval;
-        _successRate = successRate / 100.0;
+        _interval = bo.PollInterval;
+        _successRate = bo.SuccessRate / 100.0;
     }
 
     public void Start()
@@ -42,6 +51,7 @@ public class Backends
 
         Dictionary<string, bool> currentHostStatus = new Dictionary<string, bool>();
 
+        Console.WriteLine($"Starting Backend Poller: Interval: {_interval}, SuccessRate: {_successRate}, Timeout: {_client.Timeout}");
         while (true)
         {
             //var activeHosts = new List<BackendHost>();
