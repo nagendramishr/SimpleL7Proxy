@@ -7,63 +7,40 @@ using System.Net.Http;
 using OS = System;
 using Microsoft.ApplicationInsights;
 using Microsoft.ApplicationInsights.Extensibility;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 public class Program
 {
-    private static List<BackendHost> hosts = new List<BackendHost>();
     private static HttpClient hc = new HttpClient();
     Program program = new Program();
-    public static TelemetryClient? telemetryClient; 
+    public static TelemetryClient? telemetryClient;
 
-    public static void Main(string[] args)
+
+    public static async Task Main(string[] args)
     {
-        // read Environment Variables: host1, host2, host3, ...
-        for (int i = 1; i < 10; i++)
-        {
-            var hostname = OS.Environment.GetEnvironmentVariable("Host" + i);
-            if (hostname != null)
-            {
-                try {
-                    // IP is currently not supported, it will be ignored.
-                    var bh = new BackendHost(hostname, OS.Environment.GetEnvironmentVariable("Probe_path" + i), OS.Environment.GetEnvironmentVariable("IP" + i));
-                    
-                    hosts.Add( bh );
-                } catch (System.UriFormatException e) {
-                    Console.WriteLine($"Could not add {hostname} : {e.Message}");
-                
-                }
-            }
-        }
+        var backendOptions = LoadBackendOptions();
 
-        // read the port number
-        if (!int.TryParse(OS.Environment.GetEnvironmentVariable("Port"), out var port))
-        {
-            port = 443; // Default port
-            Console.WriteLine($"Invalid or missing Port. Using default: {port}");
-        }
+        var hostBuilder = Host.CreateDefaultBuilder(args).ConfigureServices((hostContext, services) =>
+            {        
+            // Register the configured BackendOptions instance with DI
+                services.Configure<BackendOptions>(options =>
+                {
+                    options.Timeout = backendOptions.Timeout;
+                    options.Port =  backendOptions.Port;
+                    options.PollInterval = backendOptions.PollInterval;
+                    options.SuccessRate = backendOptions.SuccessRate;
+                    options.Timeout = backendOptions.Timeout;
+                    options.Hosts = backendOptions.Hosts;
+                    options.Client = backendOptions.Client;
+                });
 
-        // read the backend polling interval
-        if (!int.TryParse(OS.Environment.GetEnvironmentVariable("PollInterval"), out var interval))
-        {
-            interval = 15000; // Default interval
-            Console.WriteLine($"Invalid or missing PollInterval. Using default: {interval}");
-        }
-
-        // read the success rate as an integer or default to 80 in case of error
-        if (!int.TryParse(OS.Environment.GetEnvironmentVariable("SuccessRate"), out var successRate))
-        {
-            successRate = 80; // Default success rate
-            Console.WriteLine($"Invalid or missing SuccessRate. Using default: {successRate}");
-        }
-
-        // Read http timeout for the HTTP client 
-        if (!int.TryParse(OS.Environment.GetEnvironmentVariable("Timeout"), out var timeout))
-        {
-            timeout=3000;
-            hc.Timeout = TimeSpan.FromMilliseconds(timeout);
-            Console.WriteLine($"Invalid or missing SuccessRate. Using default: {hc.Timeout}");
-        }
-
+                services.AddSingleton<IBackendOptions>(backendOptions);
+                services.AddSingleton<IBackendService, Backends>();
+                services.AddSingleton<IServer, Server>();
+                // Add other necessary service registrations here
+            });
+    
         var aiConnectionString = OS.Environment.GetEnvironmentVariable("APPINSIGHTS_CONNECTIONSTRING");
         if (aiConnectionString != null)
         {
@@ -76,16 +53,14 @@ public class Program
             Console.SetOut(new AppInsightsTextWriter(Program.telemetryClient, Console.Out));
         }
 
-        Console.WriteLine($"Starting SimpleL7Proxy: Port: {port}, PollInterval: {interval}, SuccessRate: {successRate} Timeout: {hc.Timeout}"); 
-
-        // startup the backend poller
-        var backends = new Backends(hosts, hc, interval, successRate);
+        var frameworkHost = hostBuilder.Build();
+        var backends = frameworkHost.Services.GetRequiredService<IBackendService>();
         backends.Start();
 
-        var server = new Server(port, backends, hc);
+        var server = frameworkHost.Services.GetRequiredService<IServer>();
         try
         {
-            server.Run().Wait();
+            await server.Run();
         }
         catch (Exception e)
         {
@@ -94,5 +69,55 @@ public class Program
             Console.WriteLine($"Stack Trace: {e.StackTrace}");
         }
 
+
+        await frameworkHost.RunAsync();
+    }
+
+    private static int ReadEnvironmentVariableOrDefault(string variableName, int defaultValue)
+    {
+        if (!int.TryParse(OS.Environment.GetEnvironmentVariable(variableName), out var value))
+        {
+            Console.WriteLine($"Invalid or missing {variableName}. Using default: {defaultValue}");
+            return defaultValue;
+        }
+        return value;
+    }
+
+     private static BackendOptions LoadBackendOptions()
+    {
+        var backendOptions = new BackendOptions
+        {
+            Port = ReadEnvironmentVariableOrDefault("Port", 443),
+            PollInterval = ReadEnvironmentVariableOrDefault("PollInterval", 15000),
+            SuccessRate = ReadEnvironmentVariableOrDefault("SuccessRate", 80),
+            Timeout = ReadEnvironmentVariableOrDefault("Timeout", 3000),
+            Client = new HttpClient(), // Assuming hc is HttpClient
+            Hosts = new List<BackendHost>()
+        };
+
+        int i = 1;
+        while (true)
+        {
+            var hostname = Environment.GetEnvironmentVariable($"Host{i}");
+            if (hostname == null) break;
+
+            try
+            {
+                var probePath = Environment.GetEnvironmentVariable($"Probe_path{i}");
+                var ip = Environment.GetEnvironmentVariable($"IP{i}");
+                var bh = new BackendHost(hostname, probePath, ip);
+                backendOptions.Hosts.Add(bh);
+            }
+            catch (UriFormatException e)
+            {
+                Console.WriteLine($"Could not add {hostname}: {e.Message}");
+            }
+
+            i++;
+        }
+
+        Console.WriteLine($"Starting SimpleL7Proxy: Port: {backendOptions.Port}, PollInterval: {backendOptions.PollInterval}, SuccessRate: {backendOptions.SuccessRate} Timeout: {backendOptions.Client.Timeout}");
+
+        return backendOptions;
     }
 }

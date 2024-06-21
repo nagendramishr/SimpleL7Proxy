@@ -2,15 +2,16 @@ using System;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Options;
 using System.Linq;
 using System.Threading;
 using System.Collections.Generic;
 
-public class Server
+public class Server : IServer
 {
-    private int _port;
-    private Backends _backends;
-    private HttpClient _client = new HttpClient();
+    private IBackendService? _backends;
+    private IBackendOptions? _options;
     private static bool _debug=false;
 
     // Define the set of status codes that you want to allow
@@ -22,17 +23,25 @@ public class Server
         HttpStatusCode.NotFound,
     };
 
-
-    public Server(int port, Backends backends, HttpClient client)
+    public Server(IOptions<BackendOptions>  backendOptions, IBackendService backends)
     {
+
+        if (backendOptions == null) throw new ArgumentNullException(nameof(backendOptions));
+        if (backends == null) throw new ArgumentNullException(nameof(backends));
+        if (backendOptions.Value == null) throw new ArgumentNullException(nameof(backendOptions.Value));
+
+        _options = backendOptions.Value;
         _backends = backends;
-        _port = port;
-        _client = client;
+
+        Console.WriteLine($"Server created:  Port: {_options.Port}");
     }
 
     public async Task  Run()
     {
-        var prefixes = new[] { $"http://+:{_port}/" };
+        if (_options == null) throw new ArgumentNullException(nameof(_options));
+        if (_backends == null) throw new ArgumentNullException(nameof(_backends));
+
+        var prefixes = new[] { $"http://+:{_options.Port}/" };
 
         using (var httpListener = new HttpListener())
         {
@@ -78,6 +87,10 @@ public class Server
     {
 
         bool _ldebug = _debug;
+
+        if (_backends == null) throw new ArgumentNullException(nameof(_backends));
+        if (_options == null) throw new ArgumentNullException(nameof(_options));
+        if (_options.Client == null) throw new ArgumentNullException(nameof(_options.Client));
 
         // Make a local copy of the active hosts
         var activeHosts = _backends.GetActiveHosts().ToList();
@@ -141,8 +154,8 @@ public class Server
                     }
                 }
 
-                using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(_client.Timeout.TotalMilliseconds));
-                var proxyResponse = await _client.SendAsync(proxyRequest, cts.Token);
+                using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(_options.Client.Timeout.TotalMilliseconds));
+                var proxyResponse = await _options.Client.SendAsync(proxyRequest, cts.Token);
 
                 // Check if the status code of the response is in the set of allowed status codes
                 if (!allowedStatusCodes.Contains(proxyResponse.StatusCode))
