@@ -32,8 +32,8 @@ public class Program
                     options.Timeout = backendOptions.Timeout;
                     options.Port =  backendOptions.Port;
                     options.PollInterval = backendOptions.PollInterval;
+                    options.PollTimeout = backendOptions.PollTimeout;
                     options.SuccessRate = backendOptions.SuccessRate;
-                    options.Timeout = backendOptions.Timeout;
                     options.Hosts = backendOptions.Hosts;
                     options.Client = backendOptions.Client;
                 });
@@ -109,9 +109,12 @@ public class Program
             PollInterval = ReadEnvironmentVariableOrDefault("PollInterval", 15000),
             SuccessRate = ReadEnvironmentVariableOrDefault("SuccessRate", 80),
             Timeout = ReadEnvironmentVariableOrDefault("Timeout", 3000),
+            PollTimeout = ReadEnvironmentVariableOrDefault("PollTimeout", 3000),
             Client = new HttpClient(), // Assuming hc is HttpClient
             Hosts = new List<BackendHost>()
         };
+
+        backendOptions.Client.Timeout = TimeSpan.FromMilliseconds(backendOptions.Timeout);
 
         int i = 1;
         while (true)
@@ -134,7 +137,7 @@ public class Program
             i++;
         }
 
-        Console.WriteLine($"Starting SimpleL7Proxy: Port: {backendOptions.Port}, PollInterval: {backendOptions.PollInterval}, SuccessRate: {backendOptions.SuccessRate} Timeout: {backendOptions.Client.Timeout}");
+        Console.WriteLine($"Starting SimpleL7Proxy: Port: {backendOptions.Port}");
 
         return backendOptions;
     }
