@@ -7,12 +7,15 @@ using Microsoft.Extensions.Options;
 using System.Linq;
 using System.Threading;
 using System.Collections.Generic;
+using Microsoft.ApplicationInsights; // Add this for TelemetryClient
 
 public class Server : IServer
 {
     private IBackendService? _backends;
     private IBackendOptions? _options;
     private static bool _debug=false;
+    private readonly TelemetryClient? _telemetryClient; // Add this line
+
 
     // Define the set of status codes that you want to allow
     public static HashSet<HttpStatusCode> allowedStatusCodes = new HashSet<HttpStatusCode>
@@ -23,7 +26,7 @@ public class Server : IServer
         HttpStatusCode.NotFound,
     };
 
-    public Server(IOptions<BackendOptions>  backendOptions, IBackendService backends)
+    public Server(IOptions<BackendOptions>  backendOptions, IBackendService backends, TelemetryClient? telemetryClient)
     {
 
         if (backendOptions == null) throw new ArgumentNullException(nameof(backendOptions));
@@ -32,6 +35,7 @@ public class Server : IServer
 
         _options = backendOptions.Value;
         _backends = backends;
+        _telemetryClient = telemetryClient; 
 
         Console.WriteLine($"Server created:  Port: {_options.Port}");
     }
@@ -59,8 +63,7 @@ public class Server : IServer
                 var request = context.Request;
                 var response = context.Response;
 
-                //Console.WriteLine($"Received {request.HttpMethod} request");
-                //Console.WriteLine($"Received Headers: {string.Join(", ", request.Headers.AllKeys.Select(k => $"{k}: {request.Headers[k]}"))}");
+
                 try {
 
                     if (request.Url != null)
@@ -76,8 +79,11 @@ public class Server : IServer
                         }
                     } 
                 } catch (Exception e) {
-                    Program.telemetryClient?.TrackException(e);
+                    _telemetryClient?.TrackException(e);
                     Console.WriteLine($"Error: {e.StackTrace}");
+                }
+                finally {
+                    _telemetryClient?.TrackRequest($"{request.HttpMethod} {request.Url.PathAndQuery}", DateTimeOffset.UtcNow, new TimeSpan(0, 0, 0), $"{response.StatusCode}", true);                    
                 }
             }
         }
@@ -199,7 +205,7 @@ public class Server : IServer
             }
             catch (System.Threading.Tasks.TaskCanceledException e)
             {
-                Program.telemetryClient?.TrackException(e);
+                _telemetryClient?.TrackException(e);
                 Console.WriteLine($"Request to {host.url} error:  {e.Message}");
                 // rewind the stream
                 body.Position = 0;
@@ -207,7 +213,7 @@ public class Server : IServer
             }
             catch (Exception e)
             {
-                Program.telemetryClient?.TrackException(e);
+                _telemetryClient?.TrackException(e);
                 Console.WriteLine($"Error: {e.StackTrace}");
                 Console.WriteLine($"Error: {e.Message}");
             }
