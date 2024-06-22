@@ -37,7 +37,8 @@ public class Server : IServer
         _backends = backends;
         _telemetryClient = telemetryClient; 
 
-        Console.WriteLine($"Server created:  Port: {_options.Port}");
+        var timeoutTime = TimeSpan.FromMilliseconds(_options.Timeout).ToString(@"hh\:mm\:ss\.fff");
+        Console.WriteLine($"Server created:  Port: {_options.Port} Timeout: {timeoutTime}");
     }
 
     public async Task  Run()
@@ -117,6 +118,7 @@ public class Server : IServer
             _ldebug = true;
         }
 
+        HttpStatusCode lastStatusCode = HttpStatusCode.OK; 
         foreach (var host in activeHosts)
         {
             // Try the request on each active host, stop if it worked
@@ -160,15 +162,18 @@ public class Server : IServer
                     }
                 }
 
-                using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(_options.Client.Timeout.TotalMilliseconds));
-                var proxyResponse = await _options.Client.SendAsync(proxyRequest, cts.Token);
+                //using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(_options.Client.Timeout.TotalMilliseconds));
+                var proxyResponse = await _options.Client.SendAsync(proxyRequest);//, cts.Token);
 
-                // Check if the status code of the response is in the set of allowed status codes
+                lastStatusCode = proxyResponse.StatusCode;
+
+                // Check if the status code of the response is in the set of allowed status codes, else try the next host
                 if (!allowedStatusCodes.Contains(proxyResponse.StatusCode))
                 {
   
                     body.Position = 0;
-                    Console.WriteLine($"Trying next host: Response: {proxyResponse.StatusCode}");
+                    if (_debug)
+                        Console.WriteLine($"Trying next host: Response: {proxyResponse.StatusCode}");
                     continue;
                 }
 
@@ -203,12 +208,27 @@ public class Server : IServer
 
                 return;
             }
-            catch (System.Threading.Tasks.TaskCanceledException e)
+            
+            catch (TaskCanceledException e)
+            {
+                // rewind the stream
+                body.Position = 0;
+                lastStatusCode = HttpStatusCode.RequestTimeout;
+                continue;
+            }
+            catch (OperationCanceledException)
+            {
+                body.Position = 0;
+                lastStatusCode = HttpStatusCode.BadGateway;
+                continue;
+            }
+            catch (HttpRequestException e)
             {
                 _telemetryClient?.TrackException(e);
                 Console.WriteLine($"Request to {host.url} error:  {e.Message}");
                 // rewind the stream
                 body.Position = 0;
+                lastStatusCode = HttpStatusCode.BadRequest;
                 continue;
             }
             catch (Exception e)
@@ -216,12 +236,14 @@ public class Server : IServer
                 _telemetryClient?.TrackException(e);
                 Console.WriteLine($"Error: {e.StackTrace}");
                 Console.WriteLine($"Error: {e.Message}");
+
+                lastStatusCode = HttpStatusCode.InternalServerError;
             }
         }
-        Console.WriteLine($"{path}  - 503");
 
-        // No active hosts were able to handle the request
-        response.StatusCode = 503;
+
+        Console.WriteLine($"{path}  - {lastStatusCode}");
+        response.StatusCode = (int)lastStatusCode;
         using (var writer = new StreamWriter(response.OutputStream))
         {
             await writer.WriteAsync("No active hosts were able to handle the request.");
