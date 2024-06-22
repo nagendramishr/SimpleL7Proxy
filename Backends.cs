@@ -12,8 +12,7 @@ public class Backends : IBackendService
     private List<BackendHost> _hosts;
     private List<BackendHost> _activeHosts;
 
-    private HttpClient _client = new HttpClient();
-    private int _interval;
+    private BackendOptions _options;
     private static bool _debug=false;
 
     private static double _successRate;
@@ -30,9 +29,8 @@ public class Backends : IBackendService
         var bo = options.Value; // Access the IBackendOptions instance
 
         _hosts = bo.Hosts;
-        _client = bo.Client;
+        _options = bo;
         _activeHosts = new List<BackendHost>();
-        _interval = bo.PollInterval;
         _successRate = bo.SuccessRate / 100.0;
     }
 
@@ -50,8 +48,13 @@ public class Backends : IBackendService
     private async Task Run() {
 
         Dictionary<string, bool> currentHostStatus = new Dictionary<string, bool>();
+        HttpClient _client = new HttpClient();
 
-        Console.WriteLine($"Starting Backend Poller: Interval: {_interval}, SuccessRate: {_successRate}, Timeout: {_client.Timeout}");
+        var intervalTime = TimeSpan.FromMilliseconds(_options.PollInterval).ToString(@"hh\:mm\:ss");
+        var timeoutTime = TimeSpan.FromMilliseconds(_options.PollTimeout).ToString(@"hh\:mm\:ss\.fff");
+        Console.WriteLine($"Starting Backend Poller: Interval: {intervalTime}, SuccessRate: {_successRate.ToString()}, Timeout: {timeoutTime}");
+
+        _client.Timeout = TimeSpan.FromMilliseconds(_options.PollTimeout);
         while (true)
         {
             //var activeHosts = new List<BackendHost>();
@@ -69,8 +72,7 @@ public class Backends : IBackendService
                     var stopwatch = Stopwatch.StartNew();
                     currentStatus = false;
 
-                    using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(_client.Timeout.TotalMilliseconds));
-                    var response = await _client.GetAsync(host.probeurl, cts.Token);
+                    var response = await _client.GetAsync(host.probeurl);
 
                     // Stop the stopwatch and calculate the latency
                     stopwatch.Stop();
@@ -94,6 +96,8 @@ public class Backends : IBackendService
                     Program.telemetryClient?.TrackException(e);
                     Console.WriteLine($"Host {host} is down with exception: {e.Message}");
                 }
+                catch (System.Net.Sockets.SocketException)
+                {}
                 catch (Exception e)
                 {
                     Program.telemetryClient?.TrackException(e);
@@ -132,7 +136,7 @@ public class Backends : IBackendService
                 _lastStatusDisplay = DateTime.Now;
             }
 
-            Thread.Sleep(_interval);
+            Thread.Sleep(_options.PollInterval);
         }
     }
 
