@@ -9,6 +9,9 @@ using Microsoft.ApplicationInsights;
 using Microsoft.ApplicationInsights.Extensibility;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.ApplicationInsights.WorkerService;
+using Microsoft.Extensions.Logging;
+using System.Threading.Tasks;
 
 public class Program
 {
@@ -35,29 +38,39 @@ public class Program
                     options.Client = backendOptions.Client;
                 });
 
+                services.AddLogging(loggingBuilder => loggingBuilder.AddFilter<Microsoft.Extensions.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider>("Category", LogLevel.Information));
+                var aiConnectionString = OS.Environment.GetEnvironmentVariable("APPINSIGHTS_CONNECTIONSTRING");
+                if (aiConnectionString != null)
+                {
+                    services.AddApplicationInsightsTelemetryWorkerService((ApplicationInsightsServiceOptions options) => options.ConnectionString = aiConnectionString);
+                    services.AddApplicationInsightsTelemetry(options => 
+                    { 
+                        options.EnableRequestTrackingTelemetryModule = true; 
+                    });
+                    Console.WriteLine("AppInsights initialized");
+                }
+
+                //services.AddHttpLogging(o => { });
                 services.AddSingleton<IBackendOptions>(backendOptions);
                 services.AddSingleton<IBackendService, Backends>();
                 services.AddSingleton<IServer, Server>();
+                
                 // Add other necessary service registrations here
             });
     
-        var aiConnectionString = OS.Environment.GetEnvironmentVariable("APPINSIGHTS_CONNECTIONSTRING");
-        if (aiConnectionString != null)
-        {
-            // Initialize AppInsights and map Console.WriteLine to AppInsights
-            TelemetryConfiguration configuration = TelemetryConfiguration.CreateDefault();
-            configuration.ConnectionString = aiConnectionString;
-            Program.telemetryClient = new TelemetryClient(configuration);
-
-            Console.WriteLine("AppInsights initialized");
-            Console.SetOut(new AppInsightsTextWriter(Program.telemetryClient, Console.Out));
-        }
 
         var frameworkHost = hostBuilder.Build();
-        var backends = frameworkHost.Services.GetRequiredService<IBackendService>();
+        var serviceProvider =frameworkHost.Services;
+
+        var backends = serviceProvider.GetRequiredService<IBackendService>();
+        //ILogger<Program> logger = serviceProvider.GetRequiredService<ILogger<Program>>();
+        Program.telemetryClient = serviceProvider.GetRequiredService<TelemetryClient>();
+        if ( Program.telemetryClient != null)
+            Console.SetOut(new AppInsightsTextWriter(Program.telemetryClient, Console.Out));
+
         backends.Start();
 
-        var server = frameworkHost.Services.GetRequiredService<IServer>();
+        var server = serviceProvider.GetRequiredService<IServer>();
         try
         {
             await server.Run();
