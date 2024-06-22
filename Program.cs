@@ -39,7 +39,7 @@ public class Program
                 });
 
                 services.AddLogging(loggingBuilder => loggingBuilder.AddFilter<Microsoft.Extensions.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider>("Category", LogLevel.Information));
-                var aiConnectionString = OS.Environment.GetEnvironmentVariable("APPINSIGHTS_CONNECTIONSTRING");
+                var aiConnectionString = OS.Environment.GetEnvironmentVariable("APPINSIGHTS_CONNECTIONSTRING") ?? "";
                 if (aiConnectionString != null)
                 {
                     services.AddApplicationInsightsTelemetryWorkerService((ApplicationInsightsServiceOptions options) => options.ConnectionString = aiConnectionString);
@@ -47,7 +47,8 @@ public class Program
                     { 
                         options.EnableRequestTrackingTelemetryModule = true; 
                     });
-                    Console.WriteLine("AppInsights initialized");
+                    if (aiConnectionString != "")
+                        Console.WriteLine("AppInsights initialized");
                 }
 
                 //services.AddHttpLogging(o => { });
@@ -64,9 +65,13 @@ public class Program
 
         var backends = serviceProvider.GetRequiredService<IBackendService>();
         //ILogger<Program> logger = serviceProvider.GetRequiredService<ILogger<Program>>();
-        Program.telemetryClient = serviceProvider.GetRequiredService<TelemetryClient>();
-        if ( Program.telemetryClient != null)
-            Console.SetOut(new AppInsightsTextWriter(Program.telemetryClient, Console.Out));
+        try {
+            Program.telemetryClient = serviceProvider.GetRequiredService<TelemetryClient>();
+            if ( Program.telemetryClient != null)
+                Console.SetOut(new AppInsightsTextWriter(Program.telemetryClient, Console.Out));
+        } catch (System.InvalidOperationException ) {
+        }
+
 
         backends.Start();
 
