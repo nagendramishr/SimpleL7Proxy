@@ -23,7 +23,7 @@ SimpleL7Proxy can be run standalone on the commandline or it can be deployed as 
 | -------- | ----------- | ------- |
 |**APPENDHOSTSFILE** | When running as a container and DNS does not resolve you can have the service append to the hosts file. You will need to specify Host1, IP1 as the host and ip combination.  When the container starts up, this will add an entry to the hosts file for each combination specified. |
 | |
-|**APPINSIGHTS_CONNECTIONSTRING** | This variable is used to specify the connection string for Azure Application Insights. If it's set, the application initializes Awill send logs to the application insights instance. |  None |
+|**APPINSIGHTS_CONNECTIONSTRING** | This variable is used to specify the connection string for Azure Application Insights. If it's set, the application will send logs to the application insights instance. |  None |
 | |
 |**EVENTHUB_CONNECTIONSTRING** | The connection for the eventhub to log into. Both the connection string and namespace are needed for logging to work.  | None |
 | |
@@ -31,7 +31,7 @@ SimpleL7Proxy can be run standalone on the commandline or it can be deployed as 
 | |
 |**Host1, Host2, ...** | The hostnames of the backend servers. Up to 9 backend hosts can be specified. If a hostname is provided, the application creates a new BackendHost instance and adds it to the hosts list.  The hostname should be in the form http(s)://fqdnhostname and DNS should resolve these to an IP address.  | None |
 | |
-| **IP1, IP2, ...* | Used to specify the IP address of hosts if DNS is unavailable.  Must define Host, IP and APPENDHOSTSFILE and run as container for this to work. |
+| **IP1, IP2, ...** | Used to specify the IP address of hosts if DNS is unavailable.  Must define Host, IP and APPENDHOSTSFILE and run as container for this to work. |
 | |
 |**PollInterval** | This variable is used to specify the interval (in milliseconds) at which the application will poll the backend servers. | 15000 |
 | |
@@ -110,6 +110,10 @@ az containerapp env create --name $ACENV --resource-group $GROUP --location east
 az containerapp create --name $ACANAME --resource-group $GROUP --environment $ACENV --image $ACR.azurecr.io/myproxy:v1 --target-port 443 --ingress external --registry-server $ACR.azurecr.io --query properties.configuration.ingress.fqdn --registry-username $ACR_USERNAME --registry-password $ACR_PASSWORD --env-vars Host1=https://localhost:3000 Host2=http://localhost:5000
 
 ```
+## Deploy to Container Apps via a Github Action
 
+You can create a github workflow to deploy this code to an Azure container app.  You can follow the step by step instruction from a similar project in the following video:
+
+[![Video Title](https://i.ytimg.com/vi/-KojzBMM2ic/hqdefault.jpg)](https://www.youtube.com/watch?v=-KojzBMM2ic "How to Create a Github Action to Deploy to Azure Container Apps")
 
 
