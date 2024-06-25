@@ -21,22 +21,28 @@ SimpleL7Proxy can be run standalone on the commandline or it can be deployed as 
 
 | Variable | Description | Default |
 | -------- | ----------- | ------- |
+|**APPENDHOSTSFILE** | When running as a container and DNS does not resolve you can have the service append to the hosts file. You will need to specify Host1, IP1 as the host and ip combination.  When the container starts up, this will add an entry to the hosts file for each combination specified. |
+| |
+|**APPINSIGHTS_CONNECTIONSTRING** | This variable is used to specify the connection string for Azure Application Insights. If it's set, the application initializes Awill send logs to the application insights instance. |  None |
+| |
+|**EVENTHUB_CONNECTIONSTRING** | The connection for the eventhub to log into. Both the connection string and namespace are needed for logging to work.  | None |
+| |
+|**EVENTHUB_NAME** | The eventhub namesapce.  Both the connection string and namespace are needed for logging to work. | None |
+| |
 |**Host1, Host2, ...** | The hostnames of the backend servers. Up to 9 backend hosts can be specified. If a hostname is provided, the application creates a new BackendHost instance and adds it to the hosts list.  The hostname should be in the form http(s)://fqdnhostname and DNS should resolve these to an IP address.  | None |
 | |
-|**Probe_path1, Probe_path2, ...** | Specifies the probe paths for the corresponding backend hosts. If a Host variable is set, the application will attempt to read the corresponding Probe_path variable when creating the BackendHost instance. | echo/resource?param1=sample |
-| |
-|**Port** | Specifies the port number that the server will listen on. | 443 |
+| **IP1, IP2, ...* | Used to specify the IP address of hosts if DNS is unavailable.  Must define Host, IP and APPENDHOSTSFILE and run as container for this to work. |
 | |
 |**PollInterval** | This variable is used to specify the interval (in milliseconds) at which the application will poll the backend servers. | 15000 |
 | |
-|**APPINSIGHTS_CONNECTIONSTRING** | This variable is used to specify the connection string for Azure Application Insights. If it's set, the application initializes Awill send logs to the application insights instance. |  None |
+|**Port** | Specifies the port number that the server will listen on. | 443 |
+| |
+|**Probe_path1, Probe_path2, ...** | Specifies the probe paths for the corresponding backend hosts. If a Host variable is set, the application will attempt to read the corresponding Probe_path variable when creating the BackendHost instance. | echo/resource?param1=sample |
 | |
 |**Success-rate** | The percentage success rate required to be used for proxying.  Any host whose success rate is lower will not be in rotation. | 80 |
 | |
 |**Timeout** | The connection timeout for each backend.  If the proxy times out, it will try the next host. | 3000 |
-|**EVENTHUB_CONNECTIONSTRING** | The connection for the eventhub to log into. Both the connection string and namespace are needed for logging to work.  | None |
-|**EVENTHUB_NAME** | The eventhub namesapce.  Both the connection string and namespace are needed for logging to work. | None |
-|**APPENDHOSTSFILE** | When running as a container and DNS does not resolve you can have the service append to the hosts file. You will need to specify Host1, IP1 as the host and ip combination.  When the container starts up, this will add an entry to the hosts file for each combination specified. |
+| |
 
 ### Example:
 ```
