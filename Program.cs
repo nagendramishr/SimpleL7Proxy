@@ -90,6 +90,10 @@ public class Program
 
         backends.Start();
 
+        // delay for 10 seconds to allow the backends to start
+        await Task.Delay(10000);
+
+
         var server = serviceProvider.GetRequiredService<IServer>();
         try
         {
