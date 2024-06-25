@@ -13,6 +13,7 @@ public class Server : IServer
 {
     private IBackendService? _backends;
     private IBackendOptions? _options;
+    private IEventHubClient? _eventHubClient;
     private static bool _debug=false;
     private readonly TelemetryClient? _telemetryClient; // Add this line
 
@@ -26,7 +27,7 @@ public class Server : IServer
         HttpStatusCode.NotFound,
     };
 
-    public Server(IOptions<BackendOptions>  backendOptions, IBackendService backends, TelemetryClient? telemetryClient)
+    public Server(IOptions<BackendOptions>  backendOptions, IBackendService backends, TelemetryClient? telemetryClient, IEventHubClient? eventHubClient)
     {
 
         if (backendOptions == null) throw new ArgumentNullException(nameof(backendOptions));
@@ -36,6 +37,7 @@ public class Server : IServer
         _options = backendOptions.Value;
         _backends = backends;
         _telemetryClient = telemetryClient; 
+        _eventHubClient = eventHubClient;
 
         var timeoutTime = TimeSpan.FromMilliseconds(_options.Timeout).ToString(@"hh\:mm\:ss\.fff");
         Console.WriteLine($"Server created:  Port: {_options.Port} Timeout: {timeoutTime}");
@@ -84,7 +86,10 @@ public class Server : IServer
                     Console.WriteLine($"Error: {e.StackTrace}");
                 }
                 finally {
-                    _telemetryClient?.TrackRequest($"{request.HttpMethod} {request.Url.PathAndQuery}", DateTimeOffset.UtcNow, new TimeSpan(0, 0, 0), $"{response.StatusCode}", true);                    
+                    if (request.Url != null)
+                    {
+                        _telemetryClient?.TrackRequest($"{request.HttpMethod} {request.Url.PathAndQuery}", DateTimeOffset.UtcNow, new TimeSpan(0, 0, 0), $"{response.StatusCode}", true);  
+                    }
                 }
             }
         }
@@ -205,11 +210,12 @@ public class Server : IServer
                 }
                 
                 Console.WriteLine($"{urlWithPath}  {response.Headers["Content-Length"]} {response.StatusCode}");
+                _eventHubClient?.SendData($"{urlWithPath} {response.StatusCode}");                  
 
                 return;
             }
             
-            catch (TaskCanceledException e)
+            catch (TaskCanceledException)
             {
                 // rewind the stream
                 body.Position = 0;

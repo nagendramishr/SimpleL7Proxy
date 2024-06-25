@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Text;
 using OS = System;
 using Microsoft.ApplicationInsights;
 using Microsoft.ApplicationInsights.Extensibility;
@@ -51,6 +52,21 @@ public class Program
                         Console.WriteLine("AppInsights initialized");
                 }
 
+                var eventHubConnectionString = OS.Environment.GetEnvironmentVariable("EVENTHUB_CONNECTIONSTRING") ?? "";
+                var eventHubName = OS.Environment.GetEnvironmentVariable("EVENTHUB_NAME") ?? "";
+
+                if (eventHubConnectionString != "" && eventHubName != "")
+                {
+                    services.AddSingleton<IEventHubClient>(provider => 
+                        {
+                            var eventHubClient = new EventHubClient(eventHubConnectionString, eventHubName);
+                            eventHubClient.StartTimer(); 
+                            return eventHubClient; 
+                        });
+
+                    //services.AddSingleton<IEventHubClient>(EHClient);
+                }
+
                 //services.AddHttpLogging(o => { });
                 services.AddSingleton<IBackendOptions>(backendOptions);
                 services.AddSingleton<IBackendService, Backends>();
@@ -71,7 +87,6 @@ public class Program
                 Console.SetOut(new AppInsightsTextWriter(Program.telemetryClient, Console.Out));
         } catch (System.InvalidOperationException ) {
         }
-
 
         backends.Start();
 
@@ -117,8 +132,10 @@ public class Program
         backendOptions.Client.Timeout = TimeSpan.FromMilliseconds(backendOptions.Timeout);
 
         int i = 1;
+        StringBuilder sb = new StringBuilder();
         while (true)
         {
+
             var hostname = Environment.GetEnvironmentVariable($"Host{i}");
             if (hostname == null) break;
 
@@ -128,6 +145,13 @@ public class Program
                 var ip = Environment.GetEnvironmentVariable($"IP{i}");
                 var bh = new BackendHost(hostname, probePath, ip);
                 backendOptions.Hosts.Add(bh);
+
+                if (ip != null)
+                {
+                    sb.Append(ip);
+                    sb.Append(" ");
+                    sb.Append(hostname + Environment.NewLine);
+                }
             }
             catch (UriFormatException e)
             {
@@ -135,6 +159,14 @@ public class Program
             }
 
             i++;
+        }
+
+        if (Environment.GetEnvironmentVariable("APPENDHOSTSFILE")?.Equals("true", StringComparison.OrdinalIgnoreCase) == true) {
+            Console.WriteLine($"Adding {sb.ToString()} to /etc/hosts");
+            using (StreamWriter sw = File.AppendText("/etc/hosts"))
+            {
+                sw.WriteLine(sb.ToString());
+            }
         }
 
         Console.WriteLine($"Starting SimpleL7Proxy: Port: {backendOptions.Port}");
