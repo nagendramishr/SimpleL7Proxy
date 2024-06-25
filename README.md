@@ -110,6 +110,10 @@ az containerapp env create --name $ACENV --resource-group $GROUP --location east
 az containerapp create --name $ACANAME --resource-group $GROUP --environment $ACENV --image $ACR.azurecr.io/myproxy:v1 --target-port 443 --ingress external --registry-server $ACR.azurecr.io --query properties.configuration.ingress.fqdn --registry-username $ACR_USERNAME --registry-password $ACR_PASSWORD --env-vars Host1=https://localhost:3000 Host2=http://localhost:5000
 
 ```
+## Deploy to Container Apps via a Github Action
 
+You can create a github workflow to deploy this code to an Azure container app.  You can follow the step by step instruction from a similar project in the following video:
+
+[![Video Title](https://i.ytimg.com/vi/-KojzBMM2ic/hqdefault.jpg)](https://www.youtube.com/watch?v=-KojzBMM2ic "How to Create a Github Action to Deploy to Azure Container Apps")
 
 
