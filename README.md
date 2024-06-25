@@ -6,11 +6,12 @@ The SimpleL7Proxy is a lightweight, efficient proxy designed to route network tr
 
 
 ## Features
--HTTP/HTTPS traffic routing
--Load balancing capabilities
--SSL termination
--Cross-platform compatibility (Windows, Linux, macOS)
--Simple, easy-to-understand codebase
+- HTTP/HTTPS traffic proxy
+- Load balancing capabilities
+- SSL termination
+- Cross-platform compatibility (Windows, Linux, macOS)
+- Logging to Application Insights
+- Logging to EventHub
 
 ## Usage
 SimpleL7Proxy can be run standalone on the commandline or it can be deployed as a container.  All configuration is passed to it via environment variables.  When running, the server will periodically display the current back-end latencies.
@@ -33,14 +34,18 @@ SimpleL7Proxy can be run standalone on the commandline or it can be deployed as 
 |**Success-rate** | The percentage success rate required to be used for proxying.  Any host whose success rate is lower will not be in rotation. | 80 |
 | |
 |**Timeout** | The connection timeout for each backend.  If the proxy times out, it will try the next host. | 3000 |
+|**EVENTHUB_CONNECTIONSTRING** | The connection for the eventhub to log into. Both the connection string and namespace are needed for logging to work.  | None |
+|**EVENTHUB_NAME** | The eventhub namesapce.  Both the connection string and namespace are needed for logging to work. | None |
+|**APPENDHOSTSFILE** | When running as a container and DNS does not resolve you can have the service append to the hosts file. You will need to specify Host1, IP1 as the host and ip combination.  When the container starts up, this will add an entry to the hosts file for each combination specified. |
 
 ### Example:
-
+```
 Port=8000
 Host1=https://localhost:3000
 Host2=http://localhost:5000
 PollInterval=1500
 Timeout=3000
+```
 
 This will create a listener on port 8000 and will check the health of the two hosts (https://localhost:3000 and http://localhost:5000) every 1.5 seconds.  Any incoming requests will be proxied to the server with the lowest latency ( as measured every PollInterval). The first request will timeout after 3 seconds. If the second request also timesout, the service will return error code 503.
 
@@ -81,7 +86,7 @@ docker run -p 8000:443 -e "Host1=https://localhost:3000" -e "Host2=http://localh
 
 **Deploy it**
 ```
-# FILL IN THE NAME OF YOUR ACR HERE
+# FILL IN THE NAME OF YOUR ACR HERE ( without the azurecr.io part )
 export ACR=<ACR>
 export GROUP=simplel7proxyg
 export ACENV=simplel7proxyenv
