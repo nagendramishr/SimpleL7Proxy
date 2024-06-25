@@ -5,6 +5,13 @@ public interface IBackendService
 
 }
 
+public interface IEventHubClient
+{
+    void StartTimer();
+    void StopTimer();
+    void SendData(string? value);
+}
+
 public interface IBackendOptions {
     int Port { get; set; }
     int PollInterval { get; set; }
