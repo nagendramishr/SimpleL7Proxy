@@ -139,12 +139,12 @@ public class Program
         while (true)
         {
 
-            var hostname = Environment.GetEnvironmentVariable($"Host{i}");
+            var hostname = Environment.GetEnvironmentVariable($"Host{i}")?.Trim();
             if (hostname == null) break;
 
             try
             {
-                var probePath = Environment.GetEnvironmentVariable($"Probe_path{i}");
+                var probePath = Environment.GetEnvironmentVariable($"Probe_path{i}")?.Trim();
                 var ip = Environment.GetEnvironmentVariable($"IP{i}");
                 var bh = new BackendHost(hostname, probePath, ip);
                 backendOptions.Hosts.Add(bh);
@@ -164,7 +164,7 @@ public class Program
             i++;
         }
 
-        if (Environment.GetEnvironmentVariable("APPENDHOSTSFILE")?.Equals("true", StringComparison.OrdinalIgnoreCase) == true) {
+        if (Environment.GetEnvironmentVariable("APPENDHOSTSFILE")?.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) == true) {
             Console.WriteLine($"Adding {sb.ToString()} to /etc/hosts");
             using (StreamWriter sw = File.AppendText("/etc/hosts"))
             {
