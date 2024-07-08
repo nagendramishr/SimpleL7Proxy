@@ -153,7 +153,7 @@ public class Program
                 {
                     sb.Append(ip);
                     sb.Append(" ");
-                    sb.Append(hostname + Environment.NewLine);
+                    sb.Append(bh.host + Environment.NewLine);
                 }
             }
             catch (UriFormatException e)

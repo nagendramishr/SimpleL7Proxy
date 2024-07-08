@@ -28,7 +28,7 @@ public class BackendHost
         // If host does not have a protocol, add one
         if (!hostname.StartsWith("http://") && !hostname.StartsWith("https://"))
         {
-            hostname = "http://" + host;
+            hostname = "https://" + host;
         }
 
         // if host ends with a slash, remove it
