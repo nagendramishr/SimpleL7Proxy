@@ -2,6 +2,7 @@ public interface IBackendService
 {
     void Start();
     public List<BackendHost> GetActiveHosts();
+    public Task waitForStartup(int timeout);
 
 }
 

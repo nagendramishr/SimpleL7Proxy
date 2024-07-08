@@ -16,7 +16,9 @@ public class Server : IServer
     private IEventHubClient? _eventHubClient;
     private static bool _debug=false;
     private readonly TelemetryClient? _telemetryClient; // Add this line
+    private HttpListener httpListener;
 
+    private string _url;
 
     // Define the set of status codes that you want to allow
     public static HashSet<HttpStatusCode> allowedStatusCodes = new HashSet<HttpStatusCode>
@@ -39,8 +41,36 @@ public class Server : IServer
         _telemetryClient = telemetryClient; 
         _eventHubClient = eventHubClient;
 
+        _url = $"http://+:{_options.Port}/";
+
+        httpListener = new HttpListener();
+        httpListener.Prefixes.Add(_url);
+
         var timeoutTime = TimeSpan.FromMilliseconds(_options.Timeout).ToString(@"hh\:mm\:ss\.fff");
-        Console.WriteLine($"Server created:  Port: {_options.Port} Timeout: {timeoutTime}");
+        Console.WriteLine($"Server configuration:  Port: {_options.Port} Timeout: {timeoutTime}");
+    }
+
+    public void Start()
+    {
+        try
+        {
+            httpListener.Start();
+            Console.WriteLine($"Listening on {_url}");
+            // Additional setup or async start operations can be performed here
+        }
+        catch (HttpListenerException ex)
+        {
+            // Handle specific errors, e.g., port already in use
+            Console.WriteLine($"Failed to start HttpListener: {ex.Message}");
+            // Consider rethrowing, logging the error, or handling it as needed
+            throw new Exception("Failed to start the server due to an HttpListener exception.", ex);
+        }
+        catch (Exception ex)
+        {
+            // Handle other potential errors
+            Console.WriteLine($"An error occurred: {ex.Message}");
+            throw new Exception("An error occurred while starting the server.", ex);
+        }
     }
 
     public async Task  Run()
@@ -48,48 +78,34 @@ public class Server : IServer
         if (_options == null) throw new ArgumentNullException(nameof(_options));
         if (_backends == null) throw new ArgumentNullException(nameof(_backends));
 
-        var prefixes = new[] { $"http://+:{_options.Port}/" };
-
-        using (var httpListener = new HttpListener())
+        while (true)
         {
-            foreach (var prefix in prefixes)
-            {
-                httpListener.Prefixes.Add(prefix);
-            }
+            var context = httpListener.GetContext();
+            var request = context.Request;
+            var response = context.Response;
 
-            httpListener.Start();
-            Console.WriteLine($"Listening on {string.Join(", ", prefixes)}");
+            try {
 
-            while (true)
-            {
-                var context = httpListener.GetContext();
-                var request = context.Request;
-                var response = context.Response;
-
-
-                try {
-
-                    if (request.Url != null)
-                    {   
-                        await ProxyRequestAsync(request.HttpMethod, request.Url.PathAndQuery, (WebHeaderCollection) request.Headers, request.InputStream, response);
-                    }
-                    else
-                    {
-                        response.StatusCode = 400;
-                        using (var writer = new StreamWriter(response.OutputStream))
-                        {
-                            await writer.WriteAsync("Bad Request");
-                        }
-                    } 
-                } catch (Exception e) {
-                    _telemetryClient?.TrackException(e);
-                    Console.WriteLine($"Error: {e.StackTrace}");
+                if (request.Url != null)
+                {   
+                    await ProxyRequestAsync(request.HttpMethod, request.Url.PathAndQuery, (WebHeaderCollection) request.Headers, request.InputStream, response);
                 }
-                finally {
-                    if (request.Url != null)
+                else
+                {
+                    response.StatusCode = 400;
+                    using (var writer = new StreamWriter(response.OutputStream))
                     {
-                        _telemetryClient?.TrackRequest($"{request.HttpMethod} {request.Url.PathAndQuery}", DateTimeOffset.UtcNow, new TimeSpan(0, 0, 0), $"{response.StatusCode}", true);  
+                        await writer.WriteAsync("Bad Request");
                     }
+                } 
+            } catch (Exception e) {
+                _telemetryClient?.TrackException(e);
+                Console.WriteLine($"Error: {e.StackTrace}");
+            }
+            finally {
+                if (request.Url != null)
+                {
+                    _telemetryClient?.TrackRequest($"{request.HttpMethod} {request.Url.PathAndQuery}", DateTimeOffset.UtcNow, new TimeSpan(0, 0, 0), $"{response.StatusCode}", true);  
                 }
             }
         }

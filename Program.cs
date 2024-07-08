@@ -55,17 +55,12 @@ public class Program
                 var eventHubConnectionString = OS.Environment.GetEnvironmentVariable("EVENTHUB_CONNECTIONSTRING") ?? "";
                 var eventHubName = OS.Environment.GetEnvironmentVariable("EVENTHUB_NAME") ?? "";
 
-                if (eventHubConnectionString != "" && eventHubName != "")
-                {
-                    services.AddSingleton<IEventHubClient>(provider => 
-                        {
-                            var eventHubClient = new EventHubClient(eventHubConnectionString, eventHubName);
-                            eventHubClient.StartTimer(); 
-                            return eventHubClient; 
-                        });
-
-                    //services.AddSingleton<IEventHubClient>(EHClient);
-                }
+                services.AddSingleton<IEventHubClient>(provider => 
+                    {
+                        var eventHubClient = new EventHubClient(eventHubConnectionString, eventHubName);
+                        eventHubClient.StartTimer(); 
+                        return eventHubClient; 
+                    });
 
                 //services.AddHttpLogging(o => { });
                 services.AddSingleton<IBackendOptions>(backendOptions);
@@ -90,13 +85,18 @@ public class Program
 
         backends.Start();
 
-        // delay for 10 seconds to allow the backends to start
-        await Task.Delay(10000);
-
-
         var server = serviceProvider.GetRequiredService<IServer>();
         try
         {
+            await backends.waitForStartup(20); // wait for up to 20 seconds for startup
+            server.Start();
+        } catch (Exception)
+        {
+            Console.WriteLine($"Exiting");
+            System.Environment.Exit(1);
+        }
+
+        try {        
             await server.Run();
         }
         catch (Exception e)
@@ -105,7 +105,6 @@ public class Program
             Console.WriteLine($"Error: {e.Message}");
             Console.WriteLine($"Stack Trace: {e.StackTrace}");
         }
-
 
         await frameworkHost.RunAsync();
     }
@@ -173,8 +172,16 @@ public class Program
             }
         }
 
-        Console.WriteLine($"Starting SimpleL7Proxy: Port: {backendOptions.Port}");
-
+        Console.WriteLine ("=======================================================================================");
+        Console.WriteLine(" #####                                 #       ####### ");
+        Console.WriteLine("#     #  # #    # #####  #      ###### #       #    #  #####  #####   ####  #    # #   #");
+        Console.WriteLine("#        # ##  ## #    # #      #      #           #   #    # #    # #    #  #  #   # #");
+        Console.WriteLine(" #####   # # ## # #    # #      #####  #          #    #    # #    # #    #   ##     #");
+        Console.WriteLine("      #  # #    # #####  #      #      #         #     #####  #####  #    #   ##     #");
+        Console.WriteLine("#     #  # #    # #      #      #      #         #     #      #   #  #    #  #  #    #");
+        Console.WriteLine(" #####   # #    # #      ###### ###### #######   #     #      #    #  ####  #    #   #");
+        Console.WriteLine ("=======================================================================================");
+    
         return backendOptions;
     }
 }
