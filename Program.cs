@@ -145,7 +145,7 @@ public class Program
             try
             {
                 var probePath = Environment.GetEnvironmentVariable($"Probe_path{i}")?.Trim();
-                var ip = Environment.GetEnvironmentVariable($"IP{i}");
+                var ip = Environment.GetEnvironmentVariable($"IP{i}")?.Trim();
                 var bh = new BackendHost(hostname, probePath, ip);
                 backendOptions.Hosts.Add(bh);
 
