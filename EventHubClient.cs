@@ -9,28 +9,33 @@ using System.Threading.Tasks;
 public class EventHubClient : IEventHubClient
 {
 
-    private EventHubProducerClient _producerClient;
-    private EventDataBatch _batchData;
-    private CancellationTokenSource _cancellationTokenSource;
+    private EventHubProducerClient? _producerClient;
+    private EventDataBatch? _batchData;
+    private CancellationTokenSource _cancellationTokenSource = new CancellationTokenSource();
     private Queue<string>  EHLogBuffer = new Queue<string>();
     private object _lockObject = new object();
+    private bool _isRunning = false;
 
     public EventHubClient(string connectionString, string eventHubName)
     {
-        _producerClient = new EventHubProducerClient(connectionString, eventHubName);
-        _cancellationTokenSource = new CancellationTokenSource();
-
-        _batchData = _producerClient.CreateBatchAsync().Result;
+        if (connectionString != "" && eventHubName != "")
+        {
+            _producerClient = new EventHubProducerClient(connectionString, eventHubName);
+            _batchData = _producerClient.CreateBatchAsync().Result;
+            _isRunning = true;
+        }
     }
 
     public void StartTimer()
     {
-        Task.Run(() => WriterTask());
+        if (_isRunning && _producerClient != null && _batchData != null)
+            Task.Run(() => WriterTask());
     }
 
     public async Task WriterTask()
     {
-        _cancellationTokenSource = new CancellationTokenSource();
+        if (_batchData == null || _producerClient == null)
+            return;
         try {
             while (!_cancellationTokenSource.Token.IsCancellationRequested)
             {
@@ -66,11 +71,15 @@ public class EventHubClient : IEventHubClient
 
     public void StopTimer()
     {
-        _cancellationTokenSource?.Cancel();
+        if (_isRunning)
+            _cancellationTokenSource?.Cancel();
+        _isRunning = false;
     }
 
     public void SendData(string? value)
     {
+        if (!_isRunning) return;
+
         if (value == null) return;
 
         if (value.StartsWith("\n\n")) 

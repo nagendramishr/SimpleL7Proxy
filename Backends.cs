@@ -17,6 +17,7 @@ public class Backends : IBackendService
 
     private static double _successRate;
     private static DateTime _lastStatusDisplay = DateTime.Now;
+    private static bool _isRunning = false;
 
     //public Backends(List<BackendHost> hosts, HttpClient client, int interval, int successRate)
     public Backends(IOptions<BackendOptions> options)
@@ -37,7 +38,6 @@ public class Backends : IBackendService
     public void Start()
     {
         Task.Run(() => Run());
-
     }   
 
     public List<BackendHost> GetActiveHosts()
@@ -45,6 +45,28 @@ public class Backends : IBackendService
         return _activeHosts;
     }
 
+    public async Task waitForStartup(int timeout)
+    {
+        var start = DateTime.Now;
+        for (int i=0; i < 10; i++ ) 
+        {
+            var startTimer = DateTime.Now;
+            while (!_isRunning && (DateTime.Now - startTimer).TotalSeconds < timeout)
+            {
+                await Task.Delay(1000); // Use Task.Delay for asynchronous wait
+            }
+            if (!_isRunning)
+            {
+                Console.WriteLine($"Backend Poller did not start in the last {timeout} seconds.");
+            }
+            else
+            {
+                Console.WriteLine($"Backend Poller started in {(DateTime.Now - start).TotalSeconds} seconds.");
+                return;
+            }
+        }
+        throw new Exception("Backend Poller did not start in time.");
+    }
     private async Task Run() {
 
         Dictionary<string, bool> currentHostStatus = new Dictionary<string, bool>();
@@ -85,6 +107,8 @@ public class Backends : IBackendService
                     // If the response is successful, add the host to the active hosts
                     currentStatus= response.IsSuccessStatusCode;
                     response.EnsureSuccessStatusCode();
+
+                    _isRunning = true;
 
                 } catch (UriFormatException e) {
                     Program.telemetryClient?.TrackException(e);
