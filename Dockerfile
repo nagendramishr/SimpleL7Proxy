@@ -27,4 +27,4 @@ COPY --from=build-env /app/out .
 EXPOSE 443
 
 # Define the command to run your app using `dotnet`
-ENTRYPOINT ["dotnet", "LoadBalancer.dll", "--urls", "http://*:443"]
+ENTRYPOINT ["dotnet", "SimpleL7Proxy.dll", "--urls", "http://*:443"]
