@@ -1,6 +1,6 @@
 
 public interface IServer
 {
-    Task Run();
+    Task Run(CancellationToken cancellationToken);
     void Start();
 }

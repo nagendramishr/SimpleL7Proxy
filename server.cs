@@ -73,12 +73,12 @@ public class Server : IServer
         }
     }
 
-    public async Task  Run()
+    public async Task Run(CancellationToken cancellationToken)
     {
         if (_options == null) throw new ArgumentNullException(nameof(_options));
         if (_backends == null) throw new ArgumentNullException(nameof(_backends));
 
-        while (true)
+        while (!cancellationToken.IsCancellationRequested)
         {
             var context = httpListener.GetContext();
             var request = context.Request;
@@ -88,7 +88,13 @@ public class Server : IServer
 
                 if (request.Url != null)
                 {   
-                    await ProxyRequestAsync(request.HttpMethod, request.Url.PathAndQuery, (WebHeaderCollection) request.Headers, request.InputStream, response);
+                    // Use the CancellationToken to asynchronously wait for an HTTP request.
+                    var getContextTask = httpListener.GetContextAsync();
+                    await Task.WhenAny(getContextTask, Task.Delay(Timeout.Infinite, cancellationToken));
+                    cancellationToken.ThrowIfCancellationRequested(); // This will throw if the token is cancelled while waiting for a request.
+                    context = await getContextTask; // This is safe to call if the above line didn't throw.
+
+                    //await ProxyRequestAsync(request.HttpMethod, request.Url.PathAndQuery, (WebHeaderCollection) request.Headers, request.InputStream, response);
                 }
                 else
                 {
@@ -98,7 +104,14 @@ public class Server : IServer
                         await writer.WriteAsync("Bad Request");
                     }
                 } 
-            } catch (Exception e) {
+            } 
+            catch (OperationCanceledException)
+            {
+                // Handle the cancellation request (e.g., break the loop, log the cancellation, etc.)
+                Console.WriteLine("Operation was canceled. Stopping the server.");
+                break; // Exit the loop
+            }
+            catch (Exception e) {
                 _telemetryClient?.TrackException(e);
                 Console.WriteLine($"Error: {e.StackTrace}");
             }
