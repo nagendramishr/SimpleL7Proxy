@@ -1,6 +1,6 @@
 public interface IBackendService
 {
-    void Start();
+    void Start(CancellationToken cancellationToken);
     public List<BackendHost> GetActiveHosts();
     public Task waitForStartup(int timeout);
 

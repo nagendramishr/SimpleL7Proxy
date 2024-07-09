@@ -35,9 +35,9 @@ public class Backends : IBackendService
         _successRate = bo.SuccessRate / 100.0;
     }
 
-    public void Start()
+    public void Start(CancellationToken cancellationToken)
     {
-        Task.Run(() => Run());
+        Task.Run(() => Run(cancellationToken));
     }   
 
     public List<BackendHost> GetActiveHosts()
@@ -67,7 +67,7 @@ public class Backends : IBackendService
         }
         throw new Exception("Backend Poller did not start in time.");
     }
-    private async Task Run() {
+    private async Task Run(CancellationToken cancellationToken) {
 
         Dictionary<string, bool> currentHostStatus = new Dictionary<string, bool>();
         HttpClient _client = new HttpClient();
@@ -77,7 +77,7 @@ public class Backends : IBackendService
         Console.WriteLine($"Starting Backend Poller: Interval: {intervalTime}, SuccessRate: {_successRate.ToString()}, Timeout: {timeoutTime}");
 
         _client.Timeout = TimeSpan.FromMilliseconds(_options.PollTimeout);
-        while (true)
+        while (!cancellationToken.IsCancellationRequested) 
         {
             //var activeHosts = new List<BackendHost>();
             bool statusChanged = false;
@@ -94,7 +94,7 @@ public class Backends : IBackendService
                     var stopwatch = Stopwatch.StartNew();
                     currentStatus = false;
 
-                    var response = await _client.GetAsync(host.probeurl);
+                    var response = await _client.GetAsync(host.probeurl, cancellationToken);
 
                     // Stop the stopwatch and calculate the latency
                     stopwatch.Stop();
@@ -120,6 +120,12 @@ public class Backends : IBackendService
                     Program.telemetryClient?.TrackException(e);
                     Console.WriteLine($"Host {host} is down with exception: {e.Message}");
                 }
+                catch (OperationCanceledException)
+                {
+                    // Handle the cancellation request (e.g., break the loop, log the cancellation, etc.)
+                    Console.WriteLine("Operation was canceled. Stopping the server.");
+                    break; // Exit the loop
+                }
                 catch (System.Net.Sockets.SocketException)
                 {}
                 catch (Exception e)
@@ -136,9 +142,6 @@ public class Backends : IBackendService
                 currentHostStatus[host.host] = currentStatus;
                 host.AddCallSuccess(currentStatus);
             }
-
-            // update the active hosts
-            //_activeHosts.Clear();
 
             // Find hosts that have a success rate over 80%
             _activeHosts = _hosts.Where(h => h.SuccessRate() > _successRate).ToList();
@@ -160,7 +163,7 @@ public class Backends : IBackendService
                 _lastStatusDisplay = DateTime.Now;
             }
 
-            Thread.Sleep(_options.PollInterval);
+            await Task.Delay(_options.PollInterval, cancellationToken);
         }
     }
 

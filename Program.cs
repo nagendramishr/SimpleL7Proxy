@@ -20,10 +20,19 @@ public class Program
     Program program = new Program();
     public static TelemetryClient? telemetryClient;
 
+    static CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
 
     public static async Task Main(string[] args)
     {
+        var cancellationToken = cancellationTokenSource.Token;
         var backendOptions = LoadBackendOptions();
+
+        Console.CancelKeyPress += (sender, e) =>
+            {
+                Console.WriteLine("Shutdown signal received. Initiating shutdown...");
+                e.Cancel = true; // Prevent the process from terminating immediately.
+                cancellationTokenSource.Cancel(); // Signal the application to shut down.
+            };
 
         var hostBuilder = Host.CreateDefaultBuilder(args).ConfigureServices((hostContext, services) =>
             {        
@@ -83,7 +92,7 @@ public class Program
         } catch (System.InvalidOperationException ) {
         }
 
-        backends.Start();
+        backends.Start(cancellationToken);
 
         var server = serviceProvider.GetRequiredService<IServer>();
         try
@@ -97,7 +106,7 @@ public class Program
         }
 
         try {        
-            await server.Run();
+            await server.Run(cancellationToken);
         }
         catch (Exception e)
         {
@@ -106,7 +115,20 @@ public class Program
             Console.WriteLine($"Stack Trace: {e.StackTrace}");
         }
 
-        await frameworkHost.RunAsync();
+        try
+        {
+            // Pass the CancellationToken to RunAsync
+            await frameworkHost.RunAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            Console.WriteLine("Operation was canceled.");
+        }
+        catch (Exception e)
+        {
+            // Handle other exceptions that might occur
+            Console.WriteLine($"An unexpected error occurred: {e.Message}");
+        }
     }
 
     private static int ReadEnvironmentVariableOrDefault(string variableName, int defaultValue)
