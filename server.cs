@@ -80,21 +80,24 @@ public class Server : IServer
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            var context = httpListener.GetContext();
-            var request = context.Request;
-            var response = context.Response;
+            HttpListenerRequest request=null;
+            HttpListenerResponse response=null;
 
             try {
 
-                if (request.Url != null)
-                {   
-                    // Use the CancellationToken to asynchronously wait for an HTTP request.
-                    var getContextTask = httpListener.GetContextAsync();
-                    await Task.WhenAny(getContextTask, Task.Delay(Timeout.Infinite, cancellationToken));
-                    cancellationToken.ThrowIfCancellationRequested(); // This will throw if the token is cancelled while waiting for a request.
-                    context = await getContextTask; // This is safe to call if the above line didn't throw.
+                // Use the CancellationToken to asynchronously wait for an HTTP request.
+                var getContextTask = httpListener.GetContextAsync();
+                await Task.WhenAny(getContextTask, Task.Delay(Timeout.Infinite, cancellationToken));
+                cancellationToken.ThrowIfCancellationRequested(); // This will throw if the token is cancelled while waiting for a request.
+                var context = await getContextTask; // This is safe to call if the above line didn't throw.
 
-                    //await ProxyRequestAsync(request.HttpMethod, request.Url.PathAndQuery, (WebHeaderCollection) request.Headers, request.InputStream, response);
+                //var context = httpListener.GetContext();
+                request = context.Request;
+                response = context.Response;
+
+                if (request?.Url != null)
+                {   
+                    await ProxyRequestAsync(request.HttpMethod, request.Url.PathAndQuery, (WebHeaderCollection) request.Headers, request.InputStream, response);
                 }
                 else
                 {
@@ -116,9 +119,9 @@ public class Server : IServer
                 Console.WriteLine($"Error: {e.StackTrace}");
             }
             finally {
-                if (request.Url != null)
+                if (request?.Url != null)
                 {
-                    _telemetryClient?.TrackRequest($"{request.HttpMethod} {request.Url.PathAndQuery}", DateTimeOffset.UtcNow, new TimeSpan(0, 0, 0), $"{response.StatusCode}", true);  
+                    _telemetryClient?.TrackRequest($"{request.HttpMethod} {request.Url.PathAndQuery}", DateTimeOffset.UtcNow, new TimeSpan(0, 0, 0), $"{response?.StatusCode}", true);  
                 }
             }
         }
@@ -176,25 +179,18 @@ public class Server : IServer
                     if (_ldebug) Console.WriteLine($" > {key} : {headers[key]}");
 
                     if (key.StartsWith("Content-", StringComparison.OrdinalIgnoreCase))
-                    {
                         proxyRequest.Content.Headers.TryAddWithoutValidation(key, headers[key]);
-                    }
                     else
-                    {
                         proxyRequest.Headers.TryAddWithoutValidation(key, headers[key]);
-                    }
                 }
                 proxyRequest.Headers.ConnectionClose = true;
                 if (_ldebug) {
                     foreach (var header in proxyRequest.Headers)
-                    {
                         Console.WriteLine($"  | {header.Key} : {string.Join(", ", header.Value)}");
-                    }
                     foreach (var header in proxyRequest.Content.Headers)
-                    {
                         Console.WriteLine($"  | {header.Key} : {string.Join(", ", header.Value)}");
-                    }
                 }
+
 
                 //using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(_options.Client.Timeout.TotalMilliseconds));
                 var proxyResponse = await _options.Client.SendAsync(proxyRequest);//, cts.Token);
@@ -249,18 +245,20 @@ public class Server : IServer
                 // rewind the stream
                 body.Position = 0;
                 lastStatusCode = HttpStatusCode.RequestTimeout;
+                Console.WriteLine($"Request to {host.url} timed out");
                 continue;
             }
             catch (OperationCanceledException)
             {
                 body.Position = 0;
                 lastStatusCode = HttpStatusCode.BadGateway;
+                Console.WriteLine($"Request to {host.url} was cancelled");
                 continue;
             }
             catch (HttpRequestException e)
             {
                 _telemetryClient?.TrackException(e);
-                Console.WriteLine($"Request to {host.url} error:  {e.Message}");
+                Console.WriteLine($"Request to {host.url} error:  {e.Message}  BAD REQUEST");
                 // rewind the stream
                 body.Position = 0;
                 lastStatusCode = HttpStatusCode.BadRequest;
@@ -276,7 +274,7 @@ public class Server : IServer
             }
         }
 
-
+        // If we get here, then no hosts were able to handle the request
         Console.WriteLine($"{path}  - {lastStatusCode}");
         response.StatusCode = (int)lastStatusCode;
         using (var writer = new StreamWriter(response.OutputStream))
