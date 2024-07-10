@@ -143,6 +143,17 @@ public class Program
 
      private static BackendOptions LoadBackendOptions()
     {
+        // // Place this code at the start of your application, before making any HTTPS requests
+        // System.Net.ServicePointManager.ServerCertificateValidationCallback += 
+        //     (sender, cert, chain, sslPolicyErrors) => true;
+
+        HttpClient _client = new HttpClient();
+        if (Environment.GetEnvironmentVariable("IgnoreSSLCert")?.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) == true) {
+            var handler = new HttpClientHandler();
+            handler.ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true;
+            _client = new HttpClient(handler);
+        }
+
         var backendOptions = new BackendOptions
         {
             Port = ReadEnvironmentVariableOrDefault("Port", 443),
@@ -150,7 +161,7 @@ public class Program
             SuccessRate = ReadEnvironmentVariableOrDefault("SuccessRate", 80),
             Timeout = ReadEnvironmentVariableOrDefault("Timeout", 3000),
             PollTimeout = ReadEnvironmentVariableOrDefault("PollTimeout", 3000),
-            Client = new HttpClient(), // Assuming hc is HttpClient
+            Client = _client, 
             Hosts = new List<BackendHost>()
         };
 
@@ -186,7 +197,8 @@ public class Program
             i++;
         }
 
-        if (Environment.GetEnvironmentVariable("APPENDHOSTSFILE")?.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) == true) {
+        if (Environment.GetEnvironmentVariable("APPENDHOSTSFILE")?.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) == true ||
+            Environment.GetEnvironmentVariable("AppendHostsFile")?.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) == true ) {
             Console.WriteLine($"Adding {sb.ToString()} to /etc/hosts");
             using (StreamWriter sw = File.AppendText("/etc/hosts"))
             {
