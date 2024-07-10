@@ -70,7 +70,13 @@ public class Backends : IBackendService
     private async Task Run(CancellationToken cancellationToken) {
 
         Dictionary<string, bool> currentHostStatus = new Dictionary<string, bool>();
+
         HttpClient _client = new HttpClient();
+        if (Environment.GetEnvironmentVariable("IgnoreSSLCert")?.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) == true) {
+            var handler = new HttpClientHandler();
+            handler.ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true;
+            _client = new HttpClient(handler);
+        }
 
         var intervalTime = TimeSpan.FromMilliseconds(_options.PollInterval).ToString(@"hh\:mm\:ss");
         var timeoutTime = TimeSpan.FromMilliseconds(_options.PollTimeout).ToString(@"hh\:mm\:ss\.fff");
