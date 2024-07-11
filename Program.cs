@@ -27,6 +27,8 @@ public class Program
         var cancellationToken = cancellationTokenSource.Token;
         var backendOptions = LoadBackendOptions();
 
+        ServicePointManager.DnsRefreshTimeout = 60000;
+
         Console.CancelKeyPress += (sender, e) =>
             {
                 Console.WriteLine("Shutdown signal received. Initiating shutdown...");
