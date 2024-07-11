@@ -36,6 +36,7 @@ public class EventHubClient : IEventHubClient
     {
         if (_batchData == null || _producerClient == null)
             return;
+            
         try {
             while (!_cancellationTokenSource.Token.IsCancellationRequested)
             {

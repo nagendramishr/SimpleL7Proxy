@@ -80,8 +80,8 @@ public class Server : IServer
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            HttpListenerRequest request=null;
-            HttpListenerResponse response=null;
+            HttpListenerRequest? request=null;
+            HttpListenerResponse? response=null;
 
             try {
 
@@ -90,6 +90,7 @@ public class Server : IServer
                 await Task.WhenAny(getContextTask, Task.Delay(Timeout.Infinite, cancellationToken));
                 cancellationToken.ThrowIfCancellationRequested(); // This will throw if the token is cancelled while waiting for a request.
                 var context = await getContextTask; // This is safe to call if the above line didn't throw.
+                var currentDate = DateTime.UtcNow;
 
                 //var context = httpListener.GetContext();
                 request = context.Request;
@@ -97,7 +98,7 @@ public class Server : IServer
 
                 if (request?.Url != null)
                 {   
-                    await ProxyRequestAsync(request.HttpMethod, request.Url.PathAndQuery, (WebHeaderCollection) request.Headers, request.InputStream, response);
+                    await ProxyRequestAsync(currentDate, request.HttpMethod, request.Url.PathAndQuery, (WebHeaderCollection) request.Headers, request.InputStream, response);
                 }
                 else
                 {
@@ -127,7 +128,7 @@ public class Server : IServer
         }
     }
 
-    public async Task ProxyRequestAsync(string method, string path, WebHeaderCollection headers, Stream body, HttpListenerResponse response)
+    public async Task ProxyRequestAsync(DateTime requestDate, string method, string path, WebHeaderCollection headers, Stream body, HttpListenerResponse response)
     {
 
         bool _ldebug = _debug;
@@ -156,6 +157,7 @@ public class Server : IServer
         }
 
         HttpStatusCode lastStatusCode = HttpStatusCode.OK; 
+        var urlWithPath = "";
         foreach (var host in activeHosts)
         {
             // Try the request on each active host, stop if it worked
@@ -166,7 +168,7 @@ public class Server : IServer
                 // Make a call to https://host/path using the headers and body, read the response as a stream
                 // make sure there is a slash at the beginning of the path
 
-                var urlWithPath = new UriBuilder(host.url){Path = path}.Uri.AbsoluteUri;
+                urlWithPath = new UriBuilder(host.url){Path = path}.Uri.AbsoluteUri;
                 urlWithPath = System.Net.WebUtility.UrlDecode(urlWithPath);
 
                 var proxyRequest = new HttpRequestMessage(new HttpMethod(method), urlWithPath)
@@ -194,6 +196,7 @@ public class Server : IServer
 
                 //using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(_options.Client.Timeout.TotalMilliseconds));
                 var proxyResponse = await _options.Client.SendAsync(proxyRequest);//, cts.Token);
+                var responseDate = DateTime.UtcNow;
 
                 lastStatusCode = proxyResponse.StatusCode;
 
@@ -235,8 +238,13 @@ public class Server : IServer
                 }
                 
                 Console.WriteLine($"{urlWithPath}  {response.Headers["Content-Length"]} {response.StatusCode}");
-                _eventHubClient?.SendData($"{urlWithPath} {response.StatusCode}");                  
-
+                if (_eventHubClient != null)
+                {
+                    string date = responseDate.ToString("o");
+                    // format the delta as ss:fff,
+                    var delta = (responseDate - requestDate).ToString(@"ss\:fff");
+                    _eventHubClient?.SendData($"{{\"Date\":\"{date}\", \"Url\":\"{urlWithPath}\", \"Status\":\"{response.StatusCode}\", \"Latency\":\"{delta}\"}}");
+                }
                 return;
             }
             
@@ -244,33 +252,27 @@ public class Server : IServer
             {
                 // rewind the stream
                 body.Position = 0;
-                lastStatusCode = HttpStatusCode.RequestTimeout;
-                Console.WriteLine($"Request to {host.url} timed out");
+                lastStatusCode = HandleError(null, requestDate, urlWithPath, HttpStatusCode.RequestTimeout, "Request to " + host.url + " timed out");
                 continue;
             }
             catch (OperationCanceledException)
             {
                 body.Position = 0;
-                lastStatusCode = HttpStatusCode.BadGateway;
-                Console.WriteLine($"Request to {host.url} was cancelled");
+                lastStatusCode = HandleError(null, requestDate, urlWithPath, HttpStatusCode.BadGateway, "Request to " + host.url + " was cancelled");
                 continue;
             }
             catch (HttpRequestException e)
             {
-                _telemetryClient?.TrackException(e);
-                Console.WriteLine($"Request to {host.url} error:  {e.Message}  BAD REQUEST");
                 // rewind the stream
                 body.Position = 0;
-                lastStatusCode = HttpStatusCode.BadRequest;
+                lastStatusCode = HandleError(e, requestDate, urlWithPath, HttpStatusCode.BadRequest);
                 continue;
             }
             catch (Exception e)
             {
-                _telemetryClient?.TrackException(e);
                 Console.WriteLine($"Error: {e.StackTrace}");
                 Console.WriteLine($"Error: {e.Message}");
-
-                lastStatusCode = HttpStatusCode.InternalServerError;
+                lastStatusCode = HandleError(e, requestDate, urlWithPath, HttpStatusCode.InternalServerError);
             }
         }
 
@@ -282,5 +284,20 @@ public class Server : IServer
             await writer.WriteAsync("No active hosts were able to handle the request.");
         }
         response.Close();   
+    }
+
+    private HttpStatusCode HandleError(Exception? e, DateTime requestDate, string url, HttpStatusCode statusCode, string? customMessage = null)
+    {
+        // Common operations for all exceptions
+        if (e != null)
+            _telemetryClient?.TrackException(e);
+        Console.WriteLine($"Error: {e?.Message}");
+        if (!string.IsNullOrEmpty(customMessage))
+        {
+            Console.WriteLine($"Custom Error: {customMessage}");
+        }
+        var date = requestDate.ToString("o");
+        _eventHubClient?.SendData($"{{\"Date\":\"{date}\", \"Url\":\"{url}\", \"Error\":\"{e?.Message ?? customMessage}\"}}");
+        return statusCode;
     }
 }
