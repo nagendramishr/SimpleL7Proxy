@@ -16,14 +16,13 @@ public class BackendHost
 
     public string probeurl => _probeurl ??= System.Net.WebUtility.UrlDecode( new UriBuilder(protocol, ipaddr ?? host, port, probe_path).Uri.AbsoluteUri );
 
-    // Queue to store the latencies of the last 50 calls
-    public Queue<double> latencies = new Queue<double>(5);
-
-    // Queue to store the success of the last 50 calls
-    public Queue<bool> callSuccess = new Queue<bool>(5);
+    private const int MaxData = 50;
+    private readonly Queue<double> latencies = new Queue<double>();
+    private readonly Queue<bool> callSuccess = new Queue<bool>();
 
     public BackendHost(string hostname, string? probepath, string? ipaddress)
     {
+
 
         // If host does not have a protocol, add one
         if (!hostname.StartsWith("http://") && !hostname.StartsWith("https://"))
@@ -72,13 +71,12 @@ public class BackendHost
     public void AddLatency(double latency)
     {
         // If there are already 50 latencies in the queue, remove the oldest one
-        if (latencies.Count == 50)
+        if (latencies.Count == MaxData)
             latencies.Dequeue();
 
         // Add the new latency to the queue
         latencies.Enqueue(latency);
     }
-
     // Method to calculate the average latency
     public double AverageLatency()
     {
@@ -94,7 +92,7 @@ public class BackendHost
     public void AddCallSuccess(bool success)
     {
         // If there are already 50 call results in the queue, remove the oldest one
-        if (callSuccess.Count == 50)
+        if (callSuccess.Count == MaxData)
             callSuccess.Dequeue();
 
         // Add the new call result to the queue

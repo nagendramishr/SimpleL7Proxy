@@ -193,9 +193,7 @@ public class Server : IServer
                         Console.WriteLine($"  | {header.Key} : {string.Join(", ", header.Value)}");
                 }
 
-
-                //using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(_options.Client.Timeout.TotalMilliseconds));
-                var proxyResponse = await _options.Client.SendAsync(proxyRequest);//, cts.Token);
+                var proxyResponse = await _options.Client.SendAsync(proxyRequest);
                 var responseDate = DateTime.UtcNow;
 
                 lastStatusCode = proxyResponse.StatusCode;
@@ -291,10 +289,10 @@ public class Server : IServer
         // Common operations for all exceptions
         if (e != null)
             _telemetryClient?.TrackException(e);
-        Console.WriteLine($"Error: {e?.Message}");
+
         if (!string.IsNullOrEmpty(customMessage))
         {
-            Console.WriteLine($"Custom Error: {customMessage}");
+            Console.WriteLine($"{e?.Message ?? customMessage}");
         }
         var date = requestDate.ToString("o");
         _eventHubClient?.SendData($"{{\"Date\":\"{date}\", \"Url\":\"{url}\", \"Error\":\"{e?.Message ?? customMessage}\"}}");

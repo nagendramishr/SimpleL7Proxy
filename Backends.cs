@@ -95,17 +95,12 @@ public class Backends : IBackendService
                     Console.WriteLine($"Checking host {host.url + host.probe_path}");
 
                 currentStatus = false;
+                var request = new HttpRequestMessage(HttpMethod.Get, host.probeurl);
+                var stopwatch = Stopwatch.StartNew();
                 try {
-                    // Start the stopwatch
-                    var stopwatch = Stopwatch.StartNew();
-                    currentStatus = false;
-
-                    var response = await _client.GetAsync(host.probeurl, cancellationToken);
-
-                    // Stop the stopwatch and calculate the latency
+                    var response = await _client.SendAsync(request, cancellationToken);
                     stopwatch.Stop();
                     var latency = stopwatch.Elapsed.TotalMilliseconds;
-                    //activeHosts.Add(host);
 
                     // Update the host with the new latency
                     host.AddLatency(latency);
@@ -150,10 +145,12 @@ public class Backends : IBackendService
             }
 
             // Find hosts that have a success rate over 80%
-            _activeHosts = _hosts.Where(h => h.SuccessRate() > _successRate).ToList();
-            // Sort the active hosts based on low latency  
-            _activeHosts.Sort((a, b) => a.AverageLatency().CompareTo(b.AverageLatency()));
-            //_activeHosts.AddRange(activeHosts);
+
+            _activeHosts = _hosts
+                .Where(h => h.SuccessRate() > _successRate)
+                .OrderBy(h => h.AverageLatency())
+                .ToList();
+            
 
             if ( statusChanged || (DateTime.Now - _lastStatusDisplay).TotalSeconds > 60)
             {
@@ -161,7 +158,7 @@ public class Backends : IBackendService
                 Console.WriteLine($"\n\n============ Host Status =========");
 
                 // Loop through the active hosts and output latency
-                foreach (var host in _activeHosts)
+                foreach (var host in _hosts)
                 {
                     Console.WriteLine($"Host: {host.url} Latency: {Math.Round(host.AverageLatency(), 3)}ms  Success Rate: {Math.Round(host.SuccessRate() * 100, 2)}%");
                 }
