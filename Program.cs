@@ -27,8 +27,6 @@ public class Program
         var cancellationToken = cancellationTokenSource.Token;
         var backendOptions = LoadBackendOptions();
 
-        ServicePointManager.DnsRefreshTimeout = 60000;
-
         Console.CancelKeyPress += (sender, e) =>
             {
                 Console.WriteLine("Shutdown signal received. Initiating shutdown...");
@@ -145,9 +143,8 @@ public class Program
 
      private static BackendOptions LoadBackendOptions()
     {
-        // // Place this code at the start of your application, before making any HTTPS requests
-        // System.Net.ServicePointManager.ServerCertificateValidationCallback += 
-        //     (sender, cert, chain, sslPolicyErrors) => true;
+        var DNSTimeout= ReadEnvironmentVariableOrDefault("DnsRefreshTimeout", 120000);
+        ServicePointManager.DnsRefreshTimeout = DNSTimeout;
 
         HttpClient _client = new HttpClient();
         if (Environment.GetEnvironmentVariable("IgnoreSSLCert")?.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) == true) {
@@ -155,6 +152,7 @@ public class Program
             handler.ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true;
             _client = new HttpClient(handler);
         }
+
 
         var backendOptions = new BackendOptions
         {
