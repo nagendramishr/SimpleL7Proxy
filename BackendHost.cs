@@ -20,6 +20,8 @@ public class BackendHost
     private readonly Queue<double> latencies = new Queue<double>();
     private readonly Queue<bool> callSuccess = new Queue<bool>();
 
+    private readonly Queue<double> PxLatency = new Queue<double>();
+
     public BackendHost(string hostname, string? probepath, string? ipaddress)
     {
 
