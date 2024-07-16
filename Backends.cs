@@ -17,6 +17,7 @@ public class Backends : IBackendService
 
     private static double _successRate;
     private static DateTime _lastStatusDisplay = DateTime.Now;
+    private static DateTime _lastGCTime = DateTime.Now;
     private static bool _isRunning = false;
 
     //public Backends(List<BackendHost> hosts, HttpClient client, int interval, int successRate)
@@ -205,6 +206,8 @@ public class Backends : IBackendService
         Console.WriteLine("\n\n");
         Console.WriteLine("\n\n============ Host Status =========");
 
+        int txActivity=0;
+
         if (_hosts != null )
             foreach (var host in _hosts )
             {
@@ -212,10 +215,24 @@ public class Backends : IBackendService
                 double roundedLatency = Math.Round(host.AverageLatency(), 3);
                 double successRatePercentage = Math.Round(host.SuccessRate() * 100, 2);
 
-                Console.WriteLine($"{statusIndicator} Host: {host.url} Latency: {roundedLatency}ms Success Rate: {successRatePercentage}%");
+                string hoststatus=host.GetStatus(out int calls, out int errors, out double average);
+                txActivity += calls;
+                txActivity += errors;
+
+                Console.WriteLine($"{statusIndicator} Host: {host.url} Lat: {roundedLatency}ms Succ: {successRatePercentage}% {hoststatus}");
             }
 
         _lastStatusDisplay = DateTime.Now;
+
+        //Console.WriteLine($"Total Transactions: {txActivity}   Time to go: {DateTime.Now - _lastGCTime}" );
+        if (txActivity == 0 && (DateTime.Now - _lastGCTime).TotalSeconds > (60*15) )
+        {
+            // Force garbage collection
+            //Console.WriteLine("Running garbage collection");
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            _lastGCTime = DateTime.Now;
+        }
     }
 
 }
