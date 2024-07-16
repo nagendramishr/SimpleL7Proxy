@@ -80,6 +80,7 @@ public class Server : IServer
         if (_options == null) throw new ArgumentNullException(nameof(_options));
         if (_backends == null) throw new ArgumentNullException(nameof(_backends));
         SemaphoreSlim semaphore = new SemaphoreSlim(50); // Limit to 100 concurrent tasks
+        var tasks = new List<Task>();
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -112,10 +113,13 @@ public class Server : IServer
                             }
                             finally
                             {
+                                context.Response.Close(); // Ensure the response is closed
+                                context.Request.InputStream.Dispose(); // Dispose of the request input stream
                                 semaphore.Release(); // Release the slot after the task completes
                             }
                         }, cancellationToken);
-                        await proxyTask;
+                                                
+                        tasks.Add(proxyTask);
                     }
                     else
                     {
@@ -131,9 +135,10 @@ public class Server : IServer
                     {
                         _telemetryClient?.TrackRequest($"{request.HttpMethod} {request.Url.PathAndQuery}", DateTimeOffset.UtcNow, new TimeSpan(0, 0, 0), $"{response?.StatusCode}", true);
                     }
-                    context.Response.Close(); // Ensure the response is closed
-                    context.Request.InputStream.Dispose(); // Dispose of the request input stream
                 }
+                
+                // Remove completed tasks from the list
+                tasks = tasks.Where(t => !t.IsCompleted).ToList(); 
             }
             catch (OperationCanceledException)
             {
@@ -147,6 +152,8 @@ public class Server : IServer
                 Console.WriteLine($"Error: {e.StackTrace}");
             }
         }
+
+        await Task.WhenAll(tasks); // Wait for all tasks to complete
     }
 
     public async Task ProxyRequestAsync(DateTime requestDate, string method, string path, WebHeaderCollection headers, Stream body, HttpListenerResponse response)
@@ -186,6 +193,7 @@ public class Server : IServer
                     urlWithPath = System.Net.WebUtility.UrlDecode(urlWithPath);
 
                     //var proxyRequest = new HttpRequestMessage(new HttpMethod(method), urlWithPath)
+
                     using (var bodyContent = new StreamContent(body))
                     {
                         using (var proxyRequest = new HttpRequestMessage(new HttpMethod(method), urlWithPath)
@@ -208,9 +216,9 @@ public class Server : IServer
                             if (_ldebug) LogRequestHeaders(proxyRequest);
 
                             // Send the request and get the response
+                            var ProxtStartDate = DateTime.UtcNow; 
                             using (var proxyResponse = await _options.Client.SendAsync(proxyRequest))
                             {
-                                //var proxyResponse = await _options.Client.SendAsync(proxyRequest);
                                 var responseDate = DateTime.UtcNow;
                                 lastStatusCode = proxyResponse.StatusCode;
 
@@ -224,29 +232,14 @@ public class Server : IServer
                                 }
 
                                 await ReturnResponseAsync(proxyResponse, response, urlWithPath, requestDate, responseDate, _ldebug);
-                                // // Get a stream to the response body
-                                // using (var responseBody = await proxyResponse.Content.ReadAsStreamAsync())
-                                // {
+                                host.AddPxLatency((responseDate - ProxtStartDate).TotalMilliseconds);
 
-                                //     if (_ldebug) LogResponseHeaders(proxyResponse);
-
-                                //     // Copy across all the response headers to the client
-                                //     CopyResponseHeaders(proxyResponse, response);
-
-                                //     response.StatusCode = (int)proxyResponse.StatusCode;
-
-                                //     using (var output = response.OutputStream)
-                                //     {
-                                //         await responseBody.CopyToAsync(output);
-                                //     }
-
-                                // Console.WriteLine($"{urlWithPath}  {response.Headers["Content-Length"]} {response.StatusCode}");
+                                Console.WriteLine($"{urlWithPath}  {response.Headers["Content-Length"]} {response.StatusCode}");
 
                                 if (_eventHubClient != null)
                                     SendEventData(urlWithPath, response, requestDate, responseDate);
 
                                 return;
-    //                            }
                             }
                         }
                     }
@@ -254,24 +247,24 @@ public class Server : IServer
 
                 catch (TaskCanceledException)
                 {
-                    lastStatusCode = HandleError(null, requestDate, urlWithPath, HttpStatusCode.RequestTimeout, "Request to " + host.url + " timed out");
+                    lastStatusCode = HandleError(host, null, requestDate, urlWithPath, HttpStatusCode.RequestTimeout, "Request to " + host.url + " timed out");
                     continue;
                 }
                 catch (OperationCanceledException)
                 {
-                    lastStatusCode = HandleError(null, requestDate, urlWithPath, HttpStatusCode.BadGateway, "Request to " + host.url + " was cancelled");
+                    lastStatusCode = HandleError(host, null, requestDate, urlWithPath, HttpStatusCode.BadGateway, "Request to " + host.url + " was cancelled");
                     continue;
                 }
                 catch (HttpRequestException e)
                 {
-                    lastStatusCode = HandleError(e, requestDate, urlWithPath, HttpStatusCode.BadRequest);
+                    lastStatusCode = HandleError(host, e, requestDate, urlWithPath, HttpStatusCode.BadRequest);
                     continue;
                 }
                 catch (Exception e)
                 {
                     Console.WriteLine($"Error: {e.StackTrace}");
                     Console.WriteLine($"Error: {e.Message}");
-                    lastStatusCode = HandleError(e, requestDate, urlWithPath, HttpStatusCode.InternalServerError);
+                    lastStatusCode = HandleError(host, e, requestDate, urlWithPath, HttpStatusCode.InternalServerError);
                 }
                 finally
                 {
@@ -298,9 +291,7 @@ public class Server : IServer
         }
     }
 
-   
-
-    private async Task ReturnResponseAsync(HttpResponseMessage proxyResponse, HttpListenerResponse response, string urlWithPath, DateTime requestDate, DateTime responseDate, bool debug)
+       private async Task ReturnResponseAsync(HttpResponseMessage proxyResponse, HttpListenerResponse response, string urlWithPath, DateTime requestDate, DateTime responseDate, bool debug)
     {
         // Get a stream to the response body
         using (var responseBody = await proxyResponse.Content.ReadAsStreamAsync())
@@ -357,7 +348,7 @@ public class Server : IServer
         }
     }
 
-    private HttpStatusCode HandleError(Exception? e, DateTime requestDate, string url, HttpStatusCode statusCode, string? customMessage = null)
+    private HttpStatusCode HandleError(BackendHost host, Exception? e, DateTime requestDate, string url, HttpStatusCode statusCode, string? customMessage = null)
     {
         // Common operations for all exceptions
         if (e != null)
@@ -369,6 +360,8 @@ public class Server : IServer
         }
         var date = requestDate.ToString("o");
         _eventHubClient?.SendData($"{{\"Date\":\"{date}\", \"Url\":\"{url}\", \"Error\":\"{e?.Message ?? customMessage}\"}}");
+
+        host.AddError();
         return statusCode;
     }
 }

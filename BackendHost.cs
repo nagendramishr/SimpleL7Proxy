@@ -20,7 +20,9 @@ public class BackendHost
     private readonly Queue<double> latencies = new Queue<double>();
     private readonly Queue<bool> callSuccess = new Queue<bool>();
 
-    private readonly Queue<double> PxLatency = new Queue<double>();
+    private Queue<double> PxLatency = new Queue<double>();
+    private int errors=0;
+    private object lockObj = new object();
 
     public BackendHost(string hostname, string? probepath, string? ipaddress)
     {
@@ -67,6 +69,48 @@ public class BackendHost
     public override string ToString()
     {
         return $"{protocol}://{host}:{port}";
+    }
+
+    public void AddPxLatency(double latency)
+    {
+        lock(lockObj) {
+            PxLatency.Enqueue(latency);
+        }
+    }
+
+    public void AddError() {
+        lock(lockObj) {
+            errors++;
+        }
+    }
+
+    public string GetStatus(out int calls, out int errorCalls, out double average)
+    {
+        if (PxLatency.Count == 0)
+        {
+            errorCalls = errors;
+            average = 0;
+            calls = 0;
+
+            // Reset the error count
+            errors = 0;
+
+            return " - ";
+        }
+
+        var status=PxLatency;
+        errorCalls=errors;
+        lock (lockObj)
+        {
+            // Reset the counts
+            PxLatency = new Queue<double>();
+            errors = 0;
+        }
+
+        average = Math.Round(status.Average(), 3);
+        calls = status.Count;
+
+        return $" Calls: {status.Count} Err: {errorCalls} Avg: {Math.Round(status.Average(), 3)}ms";
     }
 
     // Method to add a new latency
