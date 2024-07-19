@@ -166,26 +166,26 @@ public class Backends : IBackendService
         }
         catch (UriFormatException e) {
             Program.telemetryClient?.TrackException(e);
-            Console.WriteLine($"Could not check probe: {e.Message}");
+            Console.WriteLine($"Poller: Could not check probe: {e.Message}");
         }
         catch (System.Threading.Tasks.TaskCanceledException) {
-            Console.WriteLine($"Host Timeout: {host.host}");
+            Console.WriteLine($"Poller: Host Timeout: {host.host}");
         }
         catch (HttpRequestException e) {
             Program.telemetryClient?.TrackException(e);
-            Console.WriteLine($"Host {host.host} is down with exception: {e.Message}");
+            Console.WriteLine($"Poller: Host {host.host} is down with exception: {e.Message}");
         }
         catch (OperationCanceledException) {
             // Handle the cancellation request (e.g., break the loop, log the cancellation, etc.)
-            Console.WriteLine("Operation was canceled. Stopping the server.");
+            Console.WriteLine("Poller: Operation was canceled. Stopping the server.");
             throw; // Exit the loop
         }
         catch (System.Net.Sockets.SocketException e) {
-            Console.WriteLine($"Host {host.host} is down:  {e.Message}");
+            Console.WriteLine($"Poller: Host {host.host} is down:  {e.Message}");
         }
         catch (Exception e) {
             Program.telemetryClient?.TrackException(e);
-            Console.WriteLine($"Error: {e.Message}");
+            Console.WriteLine($"Poller: Error: {e.Message}");
         }
 
         return false;
