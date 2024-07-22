@@ -17,6 +17,7 @@ public class Backends : IBackendService
 
     private static double _successRate;
     private static DateTime _lastStatusDisplay = DateTime.Now;
+    private static DateTime _lastGCTime = DateTime.Now;
     private static bool _isRunning = false;
 
     //public Backends(List<BackendHost> hosts, HttpClient client, int interval, int successRate)
@@ -67,9 +68,8 @@ public class Backends : IBackendService
         }
         throw new Exception("Backend Poller did not start in time.");
     }
+    Dictionary<string, bool> currentHostStatus = new Dictionary<string, bool>();
     private async Task Run(CancellationToken cancellationToken) {
-
-        Dictionary<string, bool> currentHostStatus = new Dictionary<string, bool>();
 
         HttpClient _client = new HttpClient();
         if (Environment.GetEnvironmentVariable("IgnoreSSLCert")?.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) == true) {
@@ -83,90 +83,155 @@ public class Backends : IBackendService
         Console.WriteLine($"Starting Backend Poller: Interval: {intervalTime}, SuccessRate: {_successRate.ToString()}, Timeout: {timeoutTime}");
 
         _client.Timeout = TimeSpan.FromMilliseconds(_options.PollTimeout);
+
         while (!cancellationToken.IsCancellationRequested) 
         {
-            //var activeHosts = new List<BackendHost>();
             bool statusChanged = false;
-            bool currentStatus=false;
 
-            foreach (var host in _hosts)
-            {
-                if (_debug)
-                    Console.WriteLine($"Checking host {host.url + host.probe_path}");
+            try {
+                await UpdateHostStatus(_client, cancellationToken);
+                FilterActiveHosts();            
 
-                currentStatus = false;
-                var request = new HttpRequestMessage(HttpMethod.Get, host.probeurl);
-                var stopwatch = Stopwatch.StartNew();
-                try {
-                    var response = await _client.SendAsync(request, cancellationToken);
-                    stopwatch.Stop();
-                    var latency = stopwatch.Elapsed.TotalMilliseconds;
-
-                    // Update the host with the new latency
-                    host.AddLatency(latency);
-
-                    // If the response is successful, add the host to the active hosts
-                    currentStatus= response.IsSuccessStatusCode;
-                    response.EnsureSuccessStatusCode();
-
-                    _isRunning = true;
-
-                } catch (UriFormatException e) {
-                    Program.telemetryClient?.TrackException(e);
-                    Console.WriteLine($"Could not check probe: {e.Message}");
-                } catch (System.Threading.Tasks.TaskCanceledException) {
-                    Console.WriteLine($"Host Timeout: {host.host}");
-                }
-                catch (HttpRequestException e) {
-                    Program.telemetryClient?.TrackException(e);
-                    Console.WriteLine($"Host {host} is down with exception: {e.Message}");
-                }
-                catch (OperationCanceledException)
+                if ( statusChanged || (DateTime.Now - _lastStatusDisplay).TotalSeconds > 60)
                 {
-                    // Handle the cancellation request (e.g., break the loop, log the cancellation, etc.)
-                    Console.WriteLine("Operation was canceled. Stopping the server.");
-                    break; // Exit the loop
-                }
-                catch (System.Net.Sockets.SocketException)
-                {}
-                catch (Exception e)
-                {
-                    Program.telemetryClient?.TrackException(e);
-                    Console.WriteLine($"Error: {e.Message}");
-                }
-                
-                if (!currentHostStatus.ContainsKey(host.host) || currentHostStatus[host.host] != currentStatus)
-                {
-                    statusChanged = true;
+                    DisplayHostStatus();
                 }
 
-                currentHostStatus[host.host] = currentStatus;
-                host.AddCallSuccess(currentStatus);
             }
-
-            // Find hosts that have a success rate over 80%
-
-            _activeHosts = _hosts
-                .Where(h => h.SuccessRate() > _successRate)
-                .OrderBy(h => h.AverageLatency())
-                .ToList();
-            
-
-            if ( statusChanged || (DateTime.Now - _lastStatusDisplay).TotalSeconds > 60)
+            catch (OperationCanceledException)
             {
-                Console.WriteLine("\n\n");
-                Console.WriteLine($"\n\n============ Host Status =========");
-
-                // Loop through the active hosts and output latency
-                foreach (var host in _hosts)
-                {
-                    Console.WriteLine($"Host: {host.url} Latency: {Math.Round(host.AverageLatency(), 3)}ms  Success Rate: {Math.Round(host.SuccessRate() * 100, 2)}%");
-                }
-
-                _lastStatusDisplay = DateTime.Now;
+                Console.WriteLine("Operation was canceled. Stopping the server.");
+                break;
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"An unexpected error occurred: {e.Message}");
             }
 
             await Task.Delay(_options.PollInterval, cancellationToken);
+        }
+    }
+
+    
+    private async Task<bool> UpdateHostStatus(HttpClient _client, CancellationToken cancellationToken)
+    {
+        var _statusChanged = false;
+
+        if (_hosts == null)
+        {
+            return _statusChanged;
+        }   
+
+        foreach (var host in _hosts )
+        {
+            var currentStatus = await GetHostStatus(host, _client, cancellationToken);
+            bool statusChanged = !currentHostStatus.ContainsKey(host.host) || currentHostStatus[host.host] != currentStatus;
+
+            currentHostStatus[host.host] = currentStatus;
+            host.AddCallSuccess(currentStatus);
+
+            if (statusChanged)
+            {
+                _statusChanged = true;
+            }
+        }
+
+        return _statusChanged;
+    }
+
+    private async Task<bool> GetHostStatus(BackendHost host, HttpClient client, CancellationToken cancellationToken)
+    {
+        if (_debug)
+            Console.WriteLine($"Checking host {host.url + host.probe_path}");
+
+        var request = new HttpRequestMessage(HttpMethod.Get, host.probeurl);
+        var stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+
+            var response = await client.SendAsync(request, cancellationToken);
+            stopwatch.Stop();
+            var latency = stopwatch.Elapsed.TotalMilliseconds;
+
+            // Update the host with the new latency
+            host.AddLatency(latency);
+
+            response.EnsureSuccessStatusCode();
+
+            _isRunning = true;
+
+            // If the response is successful, add the host to the active hosts
+            return response.IsSuccessStatusCode;
+        }
+        catch (UriFormatException e) {
+            Program.telemetryClient?.TrackException(e);
+            Console.WriteLine($"Poller: Could not check probe: {e.Message}");
+        }
+        catch (System.Threading.Tasks.TaskCanceledException) {
+            Console.WriteLine($"Poller: Host Timeout: {host.host}");
+        }
+        catch (HttpRequestException e) {
+            Program.telemetryClient?.TrackException(e);
+            Console.WriteLine($"Poller: Host {host.host} is down with exception: {e.Message}");
+        }
+        catch (OperationCanceledException) {
+            // Handle the cancellation request (e.g., break the loop, log the cancellation, etc.)
+            Console.WriteLine("Poller: Operation was canceled. Stopping the server.");
+            throw; // Exit the loop
+        }
+        catch (System.Net.Sockets.SocketException e) {
+            Console.WriteLine($"Poller: Host {host.host} is down:  {e.Message}");
+        }
+        catch (Exception e) {
+            Program.telemetryClient?.TrackException(e);
+            Console.WriteLine($"Poller: Error: {e.Message}");
+        }
+
+        return false;
+    }
+
+    // Filter the active hosts based on the success rate
+    private void FilterActiveHosts()
+    {
+        _activeHosts = _hosts
+            .Where(h => h.SuccessRate() > _successRate)
+            .OrderBy(h => h.AverageLatency())
+            .ToList();
+    }
+
+    // Display the status of the hosts
+    private void DisplayHostStatus()
+    {
+        Console.WriteLine("\n\n");
+        Console.WriteLine("\n\n============ Host Status =========");
+
+        int txActivity=0;
+
+        if (_hosts != null )
+            foreach (var host in _hosts )
+            {
+                string statusIndicator = host.SuccessRate() > _successRate ? "Good  " : "Errors";
+                double roundedLatency = Math.Round(host.AverageLatency(), 3);
+                double successRatePercentage = Math.Round(host.SuccessRate() * 100, 2);
+
+                string hoststatus=host.GetStatus(out int calls, out int errors, out double average);
+                txActivity += calls;
+                txActivity += errors;
+
+                Console.WriteLine($"{statusIndicator} Host: {host.url} Lat: {roundedLatency}ms Succ: {successRatePercentage}% {hoststatus}");
+            }
+
+        _lastStatusDisplay = DateTime.Now;
+
+        //Console.WriteLine($"Total Transactions: {txActivity}   Time to go: {DateTime.Now - _lastGCTime}" );
+        if (txActivity == 0 && (DateTime.Now - _lastGCTime).TotalSeconds > (60*15) )
+        {
+            // Force garbage collection
+            //Console.WriteLine("Running garbage collection");
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            _lastGCTime = DateTime.Now;
         }
     }
 
