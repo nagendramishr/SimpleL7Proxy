@@ -29,7 +29,11 @@ public class RequestData : IDisposable
         // Implement IDisposable
     public void Dispose()
     {
-        Dispose(true);
+        try {
+            Dispose(true);
+        } catch (Exception e) {
+        //    Console.WriteLine("Error disposing RequestData: " + e.Message);
+        }        
         GC.SuppressFinalize(this);
     }
 
@@ -39,7 +43,12 @@ public class RequestData : IDisposable
         {
             // Dispose managed resources
             Body?.Dispose();
-            context?.Response?.Close();
+            if (context != null)
+            {
+                context.Response?.Close();
+                context.Request?.InputStream?.Dispose();
+                context.Response?.OutputStream?.Dispose();
+            }
         }
     }
 
