@@ -46,7 +46,7 @@ public class Backends : IBackendService
         return _activeHosts;
     }
 
-    public async Task waitForStartup(int timeout)
+    public async Task waitForStartup(int timeout, CancellationToken cancellationToken)
     {
         var start = DateTime.Now;
         for (int i=0; i < 10; i++ ) 
@@ -54,7 +54,11 @@ public class Backends : IBackendService
             var startTimer = DateTime.Now;
             while (!_isRunning && (DateTime.Now - startTimer).TotalSeconds < timeout)
             {
-                await Task.Delay(1000); // Use Task.Delay for asynchronous wait
+                await Task.Delay(1000, cancellationToken); // Use Task.Delay with cancellation token
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return;
+                }
             }
             if (!_isRunning)
             {
