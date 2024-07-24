@@ -6,6 +6,8 @@ public class BackendOptions : IBackendOptions
     public int PollTimeout { get; set; }
     public int Timeout { get; set; }
 
+    public int Workers { get; set; }
+
     public List<BackendHost>? Hosts { get; set; }
     public HttpClient? Client { get; set; }
 
