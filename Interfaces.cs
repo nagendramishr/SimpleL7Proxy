@@ -2,7 +2,7 @@ public interface IBackendService
 {
     void Start(CancellationToken cancellationToken);
     public List<BackendHost> GetActiveHosts();
-    public Task waitForStartup(int timeout);
+    public Task waitForStartup(int timeout, CancellationToken cancellationToken);
 
 }
 
@@ -19,6 +19,7 @@ public interface IBackendOptions {
     int PollTimeout { get; set; }
     int SuccessRate { get; set; }
     int Timeout { get; set; }
+    int Workers { get; set; }
 
     List<BackendHost>? Hosts { get; set; }
     HttpClient? Client { get; set; }
