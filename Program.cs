@@ -46,6 +46,7 @@ public class Program
                     options.SuccessRate = backendOptions.SuccessRate;
                     options.Hosts = backendOptions.Hosts;
                     options.Client = backendOptions.Client;
+                    options.Workers = backendOptions.Workers;
                 });
 
                 services.AddLogging(loggingBuilder => loggingBuilder.AddFilter<Microsoft.Extensions.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider>("Category", LogLevel.Information));
@@ -97,7 +98,7 @@ public class Program
         var server = serviceProvider.GetRequiredService<IServer>();
         try
         {
-            await backends.waitForStartup(20); // wait for up to 20 seconds for startup
+            await backends.waitForStartup(20, cancellationToken); // wait for up to 20 seconds for startup
             server.Start();
         } catch (Exception)
         {
@@ -161,6 +162,7 @@ public class Program
             SuccessRate = ReadEnvironmentVariableOrDefault("SuccessRate", 80),
             Timeout = ReadEnvironmentVariableOrDefault("Timeout", 3000),
             PollTimeout = ReadEnvironmentVariableOrDefault("PollTimeout", 3000),
+            Workers = ReadEnvironmentVariableOrDefault("Workers", 10),
             Client = _client, 
             Hosts = new List<BackendHost>()
         };
