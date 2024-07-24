@@ -15,6 +15,7 @@ using System.IO;
 using System.Text;
 using System.Net.Http.Headers;
 using System.Diagnostics;
+using System.Collections.Concurrent;
 
 
 public class Server : IServer
@@ -44,7 +45,7 @@ public class Server : IServer
         httpListener.Prefixes.Add(_listeningUrl);
 
         var timeoutTime = TimeSpan.FromMilliseconds(_options.Timeout).ToString(@"hh\:mm\:ss\.fff");
-        Console.WriteLine($"Server configuration:  Port: {_options.Port} Timeout: {timeoutTime}");
+        Console.WriteLine($"Server configuration:  Port: {_options.Port} Timeout: {timeoutTime} Workers: {_options.Workers}");
     }
 
     public void Start()
@@ -70,12 +71,24 @@ public class Server : IServer
         }
     }
 
+    //private Queue<HttpListenerContext> _requestsQueue = new Queue<HttpListenerContext>();
+    private BlockingCollection<RequestData> _requestsQueue = new BlockingCollection<RequestData>();
+
+    //private SemaphoreSlim semaphore = new SemaphoreSlim(50); // Limit to 100 concurrent tasks
+
     public async Task Run(CancellationToken cancellationToken)
     {
         if (_options == null) throw new ArgumentNullException(nameof(_options));
         if (_backends == null) throw new ArgumentNullException(nameof(_backends));
-        SemaphoreSlim semaphore = new SemaphoreSlim(50); // Limit to 100 concurrent tasks
+
         var tasks = new List<Task>();
+        // startup Worker # of tasks
+        for (int i = 0; i < _options.Workers; i++)
+        {
+            var t = new Task(() => TaskRunner(cancellationToken), cancellationToken);
+            tasks.Add(t);
+            t.Start();
+        }
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -86,52 +99,10 @@ public class Server : IServer
                 await Task.WhenAny(getContextTask, Task.Delay(Timeout.Infinite, cancellationToken));
                 cancellationToken.ThrowIfCancellationRequested(); // This will throw if the token is cancelled while waiting for a request.
 
-                var ocontext = await getContextTask;
-                await semaphore.WaitAsync(cancellationToken); // Wait for an available slot
-                var proxyTask = Task.Run(async () =>
+                if (getContextTask.IsCompletedSuccessfully)
                 {
-                    using (var incomingRequest = new RequestData(ocontext))
-                    {
-                        var lcontext = incomingRequest.context;
-                        if (lcontext != null)
-                        {
-                            try
-                            {
-                                //var pr = await ReadProxyAsync(incomingRequest);//currentDate, request.HttpMethod, request.Url.PathAndQuery,(WebHeaderCollection)request.Headers, request.InputStream);
-                                var pr = await ReadProxyAsync(incomingRequest).ConfigureAwait(false);
-
-                                await WriteResponseAsync(lcontext, pr).ConfigureAwait(false);
-
-                                Console.WriteLine($"URL: {pr.FullURL} Length: {pr.ContentHeaders["Content-Length"]} Status: {(int)pr.StatusCode}");
-
-                                if (_eventHubClient != null)
-                                    SendEventData(pr.FullURL, pr.StatusCode, incomingRequest.currentDate, pr.ResponseDate);
-                            }
-                            catch (Exception ex)
-                            {
-                                // Log the exception
-                                Console.WriteLine($"Exception: {ex.Message}");
-                                Console.WriteLine($"Stack Trace: {ex.StackTrace}");
-
-                                // Set an appropriate status code for the error
-                                lcontext.Response.StatusCode = 500;
-                                var errorMessage = Encoding.UTF8.GetBytes("Internal Server Error");
-                                await lcontext.Response.OutputStream.WriteAsync(errorMessage, 0, errorMessage.Length);
-                            }
-                            finally
-                            {
-                                _telemetryClient?.TrackRequest($"{incomingRequest.Method} {incomingRequest.Path}", 
-                                    DateTimeOffset.UtcNow, new TimeSpan(0, 0, 0), $"{lcontext.Response.StatusCode}", true);
-                                semaphore.Release(); // Release the slot after the task completes
-                            }
-                        }
-                    }
-                }, cancellationToken);
-
-                tasks.Add(proxyTask);
-
-                // Remove completed tasks from the list
-                tasks = tasks.Where(t => !t.IsCompleted).ToList();
+                    _requestsQueue.Add(new RequestData(await getContextTask)); // Enqueue the request for processing
+                }
             }
             catch (OperationCanceledException)
             {
@@ -145,10 +116,62 @@ public class Server : IServer
                 Console.WriteLine($"Error: {e.StackTrace}");
             }
         }
-
+        Console.WriteLine("Waiting for tasks to complete");
         await Task.WhenAll(tasks); // Wait for all tasks to complete
     }
 
+    // Task runners
+    private async void TaskRunner(CancellationToken cancellationToken) {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            //var incomingRequest = new RequestData(_requestsQueue.Dequeue());
+            RequestData? incomingRequest = null;
+            try
+            {
+                incomingRequest = _requestsQueue.Take(cancellationToken); // This will block until an item is available or the token is cancelled
+            }
+            catch (OperationCanceledException)
+            {
+                break; // Exit the loop if the operation is cancelled
+            }
+
+            var lcontext = incomingRequest.context;
+
+            if (lcontext == null) {
+                incomingRequest.Dispose();
+                continue;
+            }
+
+            try
+            {
+                var pr = await ReadProxyAsync(incomingRequest).ConfigureAwait(false);
+                await WriteResponseAsync(lcontext, pr).ConfigureAwait(false);
+
+                Console.WriteLine($"URL: {pr.FullURL} Length: {pr.ContentHeaders["Content-Length"]} Status: {(int)pr.StatusCode}");
+
+                if (_eventHubClient != null)
+                   SendEventData(pr.FullURL, pr.StatusCode, incomingRequest.currentDate, pr.ResponseDate);
+            }
+            catch (Exception ex)
+            {
+                // Log the exception
+                Console.WriteLine($"Exception: {ex.Message}");
+                Console.WriteLine($"Stack Trace: {ex.StackTrace}");
+
+                // Set an appropriate status code for the error
+                lcontext.Response.StatusCode = 500;
+                var errorMessage = Encoding.UTF8.GetBytes("Internal Server Error");
+                await lcontext.Response.OutputStream.WriteAsync(errorMessage, 0, errorMessage.Length);
+            }
+            finally
+            {
+                _telemetryClient?.TrackRequest($"{incomingRequest.Method} {incomingRequest.Path}", 
+                   DateTimeOffset.UtcNow, new TimeSpan(0, 0, 0), $"{lcontext.Response.StatusCode}", true);
+                incomingRequest.Dispose();
+            }
+        }
+    }
+    
 
     private async Task WriteResponseAsync(HttpListenerContext context, ProxyData pr)
     {
