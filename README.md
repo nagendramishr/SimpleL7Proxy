@@ -7,7 +7,8 @@ The SimpleL7Proxy is a lightweight, efficient proxy designed to route network tr
 
 ## Features
 - HTTP/HTTPS traffic proxy
-- Load balancing capabilities
+- Failover
+- Load balance based on latency
 - SSL termination
 - Cross-platform compatibility (Windows, Linux, macOS)
 - Logging to Application Insights
