@@ -6,6 +6,7 @@ using System.Threading;
 using System.Collections.Generic;
 using System.Diagnostics;
 using Microsoft.Extensions.Options;
+using System.Text;
 
 public class Backends : IBackendService
 {
@@ -19,6 +20,8 @@ public class Backends : IBackendService
     private static DateTime _lastStatusDisplay = DateTime.Now;
     private static DateTime _lastGCTime = DateTime.Now;
     private static bool _isRunning = false;
+    private CancellationToken _cancellationToken;
+
 
     //public Backends(List<BackendHost> hosts, HttpClient client, int interval, int successRate)
     public Backends(IOptions<BackendOptions> options)
@@ -38,7 +41,8 @@ public class Backends : IBackendService
 
     public void Start(CancellationToken cancellationToken)
     {
-        Task.Run(() => Run(cancellationToken));
+        _cancellationToken = cancellationToken;
+        Task.Run(() => Run());
     }   
 
     public List<BackendHost> GetActiveHosts()
@@ -46,7 +50,7 @@ public class Backends : IBackendService
         return _activeHosts;
     }
 
-    public async Task waitForStartup(int timeout, CancellationToken cancellationToken)
+    public async Task waitForStartup(int timeout)
     {
         var start = DateTime.Now;
         for (int i=0; i < 10; i++ ) 
@@ -54,8 +58,8 @@ public class Backends : IBackendService
             var startTimer = DateTime.Now;
             while (!_isRunning && (DateTime.Now - startTimer).TotalSeconds < timeout)
             {
-                await Task.Delay(1000, cancellationToken); // Use Task.Delay with cancellation token
-                if (cancellationToken.IsCancellationRequested)
+                await Task.Delay(1000, _cancellationToken); // Use Task.Delay with cancellation token
+                if (_cancellationToken.IsCancellationRequested)
                 {
                     return;
                 }
@@ -73,7 +77,7 @@ public class Backends : IBackendService
         throw new Exception("Backend Poller did not start in time.");
     }
     Dictionary<string, bool> currentHostStatus = new Dictionary<string, bool>();
-    private async Task Run(CancellationToken cancellationToken) {
+    private async Task Run() {
 
         HttpClient _client = new HttpClient();
         if (Environment.GetEnvironmentVariable("IgnoreSSLCert")?.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) == true) {
@@ -88,12 +92,12 @@ public class Backends : IBackendService
 
         _client.Timeout = TimeSpan.FromMilliseconds(_options.PollTimeout);
 
-        while (!cancellationToken.IsCancellationRequested) 
+        while (!_cancellationToken.IsCancellationRequested) 
         {
             bool statusChanged = false;
 
             try {
-                await UpdateHostStatus(_client, cancellationToken);
+                await UpdateHostStatus(_client);
                 FilterActiveHosts();            
 
                 if ( statusChanged || (DateTime.Now - _lastStatusDisplay).TotalSeconds > 60)
@@ -112,12 +116,12 @@ public class Backends : IBackendService
                 Console.WriteLine($"An unexpected error occurred: {e.Message}");
             }
 
-            await Task.Delay(_options.PollInterval, cancellationToken);
+            await Task.Delay(_options.PollInterval, _cancellationToken);
         }
     }
 
     
-    private async Task<bool> UpdateHostStatus(HttpClient _client, CancellationToken cancellationToken)
+    private async Task<bool> UpdateHostStatus(HttpClient _client)
     {
         var _statusChanged = false;
 
@@ -128,7 +132,7 @@ public class Backends : IBackendService
 
         foreach (var host in _hosts )
         {
-            var currentStatus = await GetHostStatus(host, _client, cancellationToken);
+            var currentStatus = await GetHostStatus(host, _client);
             bool statusChanged = !currentHostStatus.ContainsKey(host.host) || currentHostStatus[host.host] != currentStatus;
 
             currentHostStatus[host.host] = currentStatus;
@@ -143,7 +147,7 @@ public class Backends : IBackendService
         return _statusChanged;
     }
 
-    private async Task<bool> GetHostStatus(BackendHost host, HttpClient client, CancellationToken cancellationToken)
+    private async Task<bool> GetHostStatus(BackendHost host, HttpClient client)
     {
         if (_debug)
             Console.WriteLine($"Checking host {host.url + host.probe_path}");
@@ -154,7 +158,7 @@ public class Backends : IBackendService
         try
         {
 
-            var response = await client.SendAsync(request, cancellationToken);
+            var response = await client.SendAsync(request, _cancellationToken);
             stopwatch.Stop();
             var latency = stopwatch.Elapsed.TotalMilliseconds;
 
@@ -204,11 +208,18 @@ public class Backends : IBackendService
             .ToList();
     }
 
+    public string _hostStatus { get; set; } = "-";
+
+    public string HostStatus()
+    {
+        // Implementation here
+        return _hostStatus;
+    }
     // Display the status of the hosts
     private void DisplayHostStatus()
     {
-        Console.WriteLine("\n\n");
-        Console.WriteLine("\n\n============ Host Status =========");
+        StringBuilder   sb = new StringBuilder();
+        sb.Append("\n\n============ Host Status =========\n");
 
         int txActivity=0;
 
@@ -223,10 +234,12 @@ public class Backends : IBackendService
                 txActivity += calls;
                 txActivity += errors;
 
-                Console.WriteLine($"{statusIndicator} Host: {host.url} Lat: {roundedLatency}ms Succ: {successRatePercentage}% {hoststatus}");
+                sb.Append($"{statusIndicator} Host: {host.url} Lat: {roundedLatency}ms Succ: {successRatePercentage}% {hoststatus}\n");
             }
 
         _lastStatusDisplay = DateTime.Now;
+        _hostStatus = sb.ToString();
+        Console.WriteLine(_hostStatus);
 
         //Console.WriteLine($"Total Transactions: {txActivity}   Time to go: {DateTime.Now - _lastGCTime}" );
         if (txActivity == 0 && (DateTime.Now - _lastGCTime).TotalSeconds > (60*15) )

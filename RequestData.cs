@@ -1,54 +1,91 @@
+using System;
+using System.IO;
 using System.Net;
+using System.Threading.Tasks;
 
-public class RequestData : IDisposable
+public class RequestData : IDisposable, IAsyncDisposable
 {
-    public string Method { get; set; }
-    public string Path { get; set; }
-    public WebHeaderCollection Headers { get; set; }
-    public Stream Body { get; set; }
-    public bool debug = false;
-    public HttpListenerContext? context { get; set; }
-    public DateTime currentDate { get; set; }
-    public string FullURL { get; set; }
+    public HttpListenerContext? Context { get; private set; }
+    public Stream? Body { get; private set; }
+    public DateTime Timestamp { get; private set; }
+    public string Path { get; private set; }
+    public string Method { get; private set; }
+    public WebHeaderCollection Headers { get; private set; }
+    public string FullURL { get;  set; }
+    public bool Debug { get; set; } 
 
-    public RequestData(HttpListenerContext context) {
-
-        if (context.Request.Url?.PathAndQuery == null ) {
+    public RequestData(HttpListenerContext context)
+    {
+        if (context.Request.Url?.PathAndQuery == null)
+        {
             throw new ArgumentNullException("RequestData");
         }
 
         Path = context.Request.Url.PathAndQuery;
         Method = context.Request.HttpMethod;
-        Headers = (WebHeaderCollection) context.Request.Headers;
+        Headers = (WebHeaderCollection)context.Request.Headers;
         Body = context.Request.InputStream;
-        this.context = context;
-        currentDate = DateTime.UtcNow;
-        FullURL="";
+        Context = context;
+        Timestamp = DateTime.UtcNow;
+        FullURL = "";
+        Debug = false;
     }
 
-        // Implement IDisposable
+    // Implement IDisposable
     public void Dispose()
     {
-        try {
-            Dispose(true);
-        } catch (Exception e) {
-        //    Console.WriteLine("Error disposing RequestData: " + e.Message);
-        }        
+        Dispose(true);
         GC.SuppressFinalize(this);
     }
 
-    protected virtual void Dispose(bool disposing)
+protected virtual void Dispose(bool disposing)
+{
+    if (disposing)
     {
-        if (disposing)
+        // Dispose managed resources
+        FullURL = Path = Method = null;
+
+        Body?.Dispose();
+        Body = null;
+        Context?.Response?.Close();
+        Context?.Response?.OutputStream?.Dispose();
+        Context?.Request?.InputStream.Dispose();
+        Context = null;
+    }
+}
+
+    // Implement IAsyncDisposable
+    public async ValueTask DisposeAsync()
+    {
+        await DisposeAsyncCore();
+
+        // Dispose of unmanaged resources
+        Dispose(false);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual async ValueTask DisposeAsyncCore()
+    {
+        if (Body != null)
         {
-            // Dispose managed resources
-            Body?.Dispose();
-            if (context != null)
+            await Body.DisposeAsync();
+            Body = null;
+        }
+
+        if (Context != null)
+        {
+            if (Context.Request?.InputStream != null)
             {
-                context.Response?.Close();
-                context.Request?.InputStream?.Dispose();
-                context.Response?.OutputStream?.Dispose();
+                await Context.Request.InputStream.DisposeAsync();
             }
+
+            if (Context.Response?.OutputStream != null)
+            {
+                await Context.Response.OutputStream.DisposeAsync();
+            }
+
+            Context.Response?.Close();
+            Context = null;
         }
     }
 
