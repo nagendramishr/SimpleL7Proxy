@@ -2,8 +2,8 @@ public interface IBackendService
 {
     void Start(CancellationToken cancellationToken);
     public List<BackendHost> GetActiveHosts();
-    public Task waitForStartup(int timeout, CancellationToken cancellationToken);
-
+    public Task waitForStartup(int timeout);
+    public string HostStatus();
 }
 
 public interface IEventHubClient

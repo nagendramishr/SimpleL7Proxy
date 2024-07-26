@@ -1,6 +1,8 @@
 
+using System.Collections.Concurrent;
+
 public interface IServer
 {
-    Task Run(CancellationToken cancellationToken);
-    void Start();
+    Task Run();
+    BlockingCollection<RequestData> Start(CancellationToken cancellationToken);
 }
