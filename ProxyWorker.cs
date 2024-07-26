@@ -210,7 +210,7 @@ public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requ
                         lastStatusCode = proxyResponse.StatusCode;
 
                         // Check if the status code of the response is in the set of allowed status codes, else try the next host
-                        if ((int)proxyResponse.StatusCode >= 400 && (int)proxyResponse.StatusCode < 500)
+                        if ((int)proxyResponse.StatusCode < 400 || (int)proxyResponse.StatusCode >= 500)
                         {
                             if (request.Debug)
                                 Console.WriteLine($"Trying next host: Response: {proxyResponse.StatusCode}");
