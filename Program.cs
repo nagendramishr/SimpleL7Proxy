@@ -1,9 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+﻿
 using System.Net;
-using System.Net.Http;
 using System.Text;
 using OS = System;
 using Microsoft.ApplicationInsights;
@@ -36,11 +32,11 @@ public class Program
 
         var hostBuilder = Host.CreateDefaultBuilder(args).ConfigureServices((hostContext, services) =>
             {        
-            // Register the configured BackendOptions instance with DI
+                // Register the configured BackendOptions instance with DI
                 services.Configure<BackendOptions>(options =>
                 {
                     options.Timeout = backendOptions.Timeout;
-                    options.Port =  backendOptions.Port;
+                    options.Port = backendOptions.Port;
                     options.PollInterval = backendOptions.PollInterval;
                     options.PollTimeout = backendOptions.PollTimeout;
                     options.SuccessRate = backendOptions.SuccessRate;
@@ -64,14 +60,10 @@ public class Program
 
                 var eventHubConnectionString = OS.Environment.GetEnvironmentVariable("EVENTHUB_CONNECTIONSTRING") ?? "";
                 var eventHubName = OS.Environment.GetEnvironmentVariable("EVENTHUB_NAME") ?? "";
+                var eventHubClient = new EventHubClient(eventHubConnectionString, eventHubName);
+                eventHubClient.StartTimer();
 
-                services.AddSingleton<IEventHubClient>(provider => 
-                    {
-                        var eventHubClient = new EventHubClient(eventHubConnectionString, eventHubName);
-                        eventHubClient.StartTimer(); 
-                        return eventHubClient; 
-                    });
-
+                services.AddSingleton<IEventHubClient>(provider => eventHubClient);
                 //services.AddHttpLogging(o => { });
                 services.AddSingleton<IBackendOptions>(backendOptions);
                 services.AddSingleton<IBackendService, Backends>();
@@ -96,18 +88,29 @@ public class Program
         backends.Start(cancellationToken);
 
         var server = serviceProvider.GetRequiredService<IServer>();
+        var eventHubClient = serviceProvider.GetRequiredService<IEventHubClient>();
+        var tasks = new List<Task>();
         try
         {
-            await backends.waitForStartup(20, cancellationToken); // wait for up to 20 seconds for startup
-            server.Start();
-        } catch (Exception)
+            await backends.waitForStartup(20); // wait for up to 20 seconds for startup
+            var queue = server.Start(cancellationToken);
+
+            // startup Worker # of tasks
+            for (int i = 0; i < backendOptions.Workers; i++)
+            {
+                var pw = new ProxyWorker(cancellationToken, queue, backendOptions, backends, eventHubClient, telemetryClient);
+                tasks.Add( Task.Run(() => pw.TaskRunner(), cancellationToken));
+            }
+
+        } catch (Exception e)
         {
-            Console.WriteLine($"Exiting");
+            Console.WriteLine($"Exiting: {e.Message}"); ;
             System.Environment.Exit(1);
         }
 
         try {        
-            await server.Run(cancellationToken);
+            await server.Run();
+            await Task.WhenAll(tasks); // Wait for all tasks to complete
         }
         catch (Exception e)
         {
