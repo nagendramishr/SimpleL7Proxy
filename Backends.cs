@@ -79,47 +79,45 @@ public class Backends : IBackendService
     Dictionary<string, bool> currentHostStatus = new Dictionary<string, bool>();
     private async Task Run() {
 
-        HttpClient _client = new HttpClient();
-        if (Environment.GetEnvironmentVariable("IgnoreSSLCert")?.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) == true) {
-            var handler = new HttpClientHandler();
-            handler.ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true;
-            _client = new HttpClient(handler);
-        }
+        using (HttpClient _client = CreateHttpClient()) {
+            var intervalTime = TimeSpan.FromMilliseconds(_options.PollInterval).ToString(@"hh\:mm\:ss");
+            var timeoutTime = TimeSpan.FromMilliseconds(_options.PollTimeout).ToString(@"hh\:mm\:ss\.fff");
+            Console.WriteLine($"Starting Backend Poller: Interval: {intervalTime}, SuccessRate: {_successRate}, Timeout: {timeoutTime}");
 
-        var intervalTime = TimeSpan.FromMilliseconds(_options.PollInterval).ToString(@"hh\:mm\:ss");
-        var timeoutTime = TimeSpan.FromMilliseconds(_options.PollTimeout).ToString(@"hh\:mm\:ss\.fff");
-        Console.WriteLine($"Starting Backend Poller: Interval: {intervalTime}, SuccessRate: {_successRate.ToString()}, Timeout: {timeoutTime}");
+            _client.Timeout = TimeSpan.FromMilliseconds(_options.PollTimeout);
 
-        _client.Timeout = TimeSpan.FromMilliseconds(_options.PollTimeout);
+            using (var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(_cancellationToken)) {
+                while (!linkedCts.Token.IsCancellationRequested) {
+                    try {
+                        await UpdateHostStatus(_client);
+                        FilterActiveHosts();
 
-        while (!_cancellationToken.IsCancellationRequested) 
-        {
-            bool statusChanged = false;
+                        if ((DateTime.Now - _lastStatusDisplay).TotalSeconds > 60) {
+                            DisplayHostStatus();
+                        }
+                    } catch (OperationCanceledException) {
+                        Console.WriteLine("Operation was canceled. Stopping the server.");
+                        break;
+                    } catch (Exception e) {
+                        Console.WriteLine($"An unexpected error occurred: {e.Message}");
+                    }
 
-            try {
-                await UpdateHostStatus(_client);
-                FilterActiveHosts();            
-
-                if ( statusChanged || (DateTime.Now - _lastStatusDisplay).TotalSeconds > 60)
-                {
-                    DisplayHostStatus();
+                    await Task.Delay(_options.PollInterval, linkedCts.Token);
                 }
-
             }
-            catch (OperationCanceledException)
-            {
-                Console.WriteLine("Operation was canceled. Stopping the server.");
-                break;
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine($"An unexpected error occurred: {e.Message}");
-            }
-
-            await Task.Delay(_options.PollInterval, _cancellationToken);
         }
     }
 
+    private HttpClient CreateHttpClient() {
+        if (Environment.GetEnvironmentVariable("IgnoreSSLCert")?.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) == true) {
+            var handler = new HttpClientHandler {
+                ServerCertificateCustomValidationCallback = (message, cert, chain, errors) => true
+            };
+            return new HttpClient(handler);
+        } else {
+            return new HttpClient();
+        }
+    }
     
     private async Task<bool> UpdateHostStatus(HttpClient _client)
     {
