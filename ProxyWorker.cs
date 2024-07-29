@@ -187,10 +187,31 @@ public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requ
                 using (var proxyRequest = new HttpRequestMessage(new HttpMethod(method), request.FullURL))
                 {
                     proxyRequest.Content = bodyContent;
+                    
                     AddHeadersToRequest(proxyRequest, headers);
                     if (bodyBytes.Length > 0)
                     {
                         proxyRequest.Content.Headers.ContentLength = bodyBytes.Length;
+
+                        // Preserve the content type if it was provided
+                        string contentType = request.Context.Request.ContentType ?? "application/octet-stream"; // Default to application/octet-stream if not specified
+                        var mediaTypeHeaderValue = new MediaTypeHeaderValue(contentType);
+
+                        // Preserve the encoding type if it was provided
+                        if (request.Context.Request.ContentType != null && request.Context.Request.ContentType.Contains("charset"))
+                        {
+                            var charset = request.Context.Request.ContentType.Split(';').LastOrDefault(s => s.Trim().StartsWith("charset"));
+                            if (charset != null)
+                            {
+                                mediaTypeHeaderValue.CharSet = charset.Split('=').Last().Trim();
+                            }
+                        }
+                        else
+                        {
+                            mediaTypeHeaderValue.CharSet = "utf-8";
+                        }
+
+                        proxyRequest.Content.Headers.ContentType = mediaTypeHeaderValue;
                     }
                     
                     proxyRequest.Headers.ConnectionClose = true;
@@ -198,8 +219,11 @@ public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requ
                     // Log request headers if debugging is enabled
                     if (request.Debug)
                     {
+                        Console.WriteLine($"> {method} {request.FullURL} {bodyBytes.Length} bytes");
                         LogHeaders(proxyRequest.Headers, ">");
                         LogHeaders(proxyRequest.Content.Headers, "  >");
+                        string bodyString = System.Text.Encoding.UTF8.GetString(bodyBytes);
+                        //Console.WriteLine($"Body Content: {bodyString}");
                     }
 
                     // Send the request and get the response
@@ -210,12 +234,12 @@ public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requ
                         lastStatusCode = proxyResponse.StatusCode;
 
                         // Check if the status code of the response is in the set of allowed status codes, else try the next host
-                        if ((int)proxyResponse.StatusCode < 400 || (int)proxyResponse.StatusCode >= 500)
-                        {
-                            if (request.Debug)
-                                Console.WriteLine($"Trying next host: Response: {proxyResponse.StatusCode}");
-                            continue;
-                        }
+                       if (((int)proxyResponse.StatusCode > 300 &&  (int)proxyResponse.StatusCode < 400) || (int)proxyResponse.StatusCode > 500)
+                       {
+                           if (request.Debug)
+                               Console.WriteLine($"Trying next host: Response: {proxyResponse.StatusCode}");
+                           continue;
+                       }
 
                         host.AddPxLatency((responseDate - ProxyStartDate).TotalMilliseconds);
 
@@ -228,6 +252,11 @@ public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requ
                         };
                         bodyBytes = [];
                         await GetProxyResponseAsync(proxyResponse, request, pr);
+
+                        if (request.Debug)
+                        {
+                            Console.WriteLine($"Got: {pr.StatusCode} {pr.FullURL} {pr.ContentHeaders["Content-Length"]} Body: {pr?.Body?.Length} bytes");  
+                        }
                         return pr;
                     }
                 }
@@ -273,14 +302,7 @@ public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requ
         foreach (string? key in headers.AllKeys)
         {
             if (key == null) continue;
-            if (key.StartsWith("Content-", StringComparison.OrdinalIgnoreCase))
-            {
-                if (!(key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase)))
-                {
-                    proxyRequest?.Content?.Headers.TryAddWithoutValidation(key, headers[key]);
-                }
-            }
-            else if (!key.StartsWith("x-", StringComparison.OrdinalIgnoreCase))
+            if (!key.StartsWith("x-", StringComparison.OrdinalIgnoreCase) && !key.Equals("content-length", StringComparison.OrdinalIgnoreCase))
             {
                 proxyRequest?.Headers.TryAddWithoutValidation(key, headers[key]);
             }
@@ -317,7 +339,7 @@ public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requ
         {
             if (request.Debug)
             {
-                Console.WriteLine("No charset specified, using default UTF-8");
+                Console.WriteLine("< No charset specified, using default UTF-8");
             }
             return Encoding.UTF8;
         }
