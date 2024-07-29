@@ -182,7 +182,7 @@ public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requ
                 {
                     proxyRequest.Content = bodyContent;
                     
-                    AddHeadersToRequest(proxyRequest, request.Headers);
+                    CopyHeaders( request.Headers, proxyRequest, true);
                     if (bodyBytes.Length > 0)
                     {
                         proxyRequest.Content.Headers.ContentLength = bodyBytes.Length;
@@ -291,17 +291,6 @@ public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requ
 
     }
 
-    private void AddHeadersToRequest(HttpRequestMessage? proxyRequest, NameValueCollection headers)
-    {
-        foreach (string? key in headers.AllKeys)
-        {
-            if (key == null) continue;
-            if (!key.StartsWith("x-", StringComparison.OrdinalIgnoreCase) && !key.Equals("content-length", StringComparison.OrdinalIgnoreCase))
-            {
-                proxyRequest?.Headers.TryAddWithoutValidation(key, headers[key]);
-            }
-        }
-    }
     private async Task GetProxyResponseAsync(HttpResponseMessage proxyResponse, RequestData request, ProxyData pr)
     {       
         // Get a stream to the response body
@@ -350,6 +339,18 @@ public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requ
         }
     }
 
+    private void CopyHeaders(NameValueCollection sourceHeaders, HttpRequestMessage? targetMessage, bool ignoreHeaders = false)
+    {
+        foreach (string? key in sourceHeaders.AllKeys)
+        {
+            if (key == null) continue;
+            if ( !ignoreHeaders ||  (!key.StartsWith("x-", StringComparison.OrdinalIgnoreCase) &&  !key.Equals("content-length", StringComparison.OrdinalIgnoreCase)))
+            {
+                targetMessage?.Headers.TryAddWithoutValidation(key, sourceHeaders[key]);
+            }
+        }
+    }
+
     private void CopyHeaders(WebHeaderCollection sourceHeaders, WebHeaderCollection targetHeaders)
     {
         foreach (var key in sourceHeaders.AllKeys)
@@ -357,15 +358,18 @@ public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requ
             targetHeaders.Add(key, sourceHeaders[key]);
         }
     }
-    private void CopyHeaders(HttpResponseMessage message, WebHeaderCollection Headers, WebHeaderCollection ContentHeaders)
+
+    private void CopyHeaders(HttpResponseMessage sourceMessage, WebHeaderCollection targetHeaders, WebHeaderCollection? targetContentHeaders=null)
     {
-        foreach (var header in message.Headers)
+        foreach (var header in sourceMessage.Headers)
         {
-            Headers.Add(header.Key, string.Join(", ", header.Value));
+            targetHeaders.Add(header.Key, string.Join(", ", header.Value));
         }
-        foreach (var header in message.Content.Headers)
-        {
-            ContentHeaders.Add(header.Key, string.Join(", ", header.Value));
+        if (targetContentHeaders != null) {
+            foreach (var header in sourceMessage.Content.Headers)
+            {
+                targetContentHeaders.Add(header.Key, string.Join(", ", header.Value));
+            }
         }
     }
 
