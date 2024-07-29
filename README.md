@@ -26,11 +26,15 @@ SimpleL7Proxy can be run standalone on the commandline or it can be deployed as 
 | |
 |**APPINSIGHTS_CONNECTIONSTRING** | This variable is used to specify the connection string for Azure Application Insights. If it's set, the application will send logs to the application insights instance. |  None |
 | |
+| **DnsRefreshTimeout** | The number of ms to force a dns refresh.  Useful to have a small value when testing failover. | 120000 |
+| |
 |**EVENTHUB_CONNECTIONSTRING** | The connection for the eventhub to log into. Both the connection string and namespace are needed for logging to work.  | None |
 | |
 |**EVENTHUB_NAME** | The eventhub namesapce.  Both the connection string and namespace are needed for logging to work. | None |
 | |
 |**Host1, Host2, ...** | The hostnames of the backend servers. Up to 9 backend hosts can be specified. If a hostname is provided, the application creates a new BackendHost instance and adds it to the hosts list.  The hostname should be in the form http(s)://fqdnhostname and DNS should resolve these to an IP address.  | None |
+| |
+| **IgnoreSSLCert** | Toggles if the server should validate certificates.  If your hosts are using self-signed certs, set this value to true. |  false | 
 | |
 | **IP1, IP2, ...** | Used to specify the IP address of hosts if DNS is unavailable.  Must define Host, IP and APPENDHOSTSFILE and run as container for this to work. |
 | |
@@ -43,6 +47,8 @@ SimpleL7Proxy can be run standalone on the commandline or it can be deployed as 
 |**Success-rate** | The percentage success rate required to be used for proxying.  Any host whose success rate is lower will not be in rotation. | 80 |
 | |
 |**Timeout** | The connection timeout for each backend.  If the proxy times out, it will try the next host. | 3000 |
+| |
+|**Workers** | The number of proxy worker threads. | 10 |
 | |
 
 ### Example:
