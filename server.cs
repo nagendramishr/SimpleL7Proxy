@@ -65,12 +65,22 @@ public class Server : IServer
             {
                 // Use the CancellationToken to asynchronously wait for an HTTP request.
                 var getContextTask = httpListener.GetContextAsync();
-                var completedTask = await Task.WhenAny(getContextTask, Task.Delay(Timeout.Infinite, _cancellationToken)).ConfigureAwait(false);
-                _cancellationToken.ThrowIfCancellationRequested(); // This will throw if the token is cancelled while waiting for a request.
-
-                if (completedTask == getContextTask)
+                using (var delayCts = CancellationTokenSource.CreateLinkedTokenSource(_cancellationToken))
                 {
-                    _requestsQueue.Add(new RequestData(await getContextTask.ConfigureAwait(false))); // Enqueue the request for processing
+                    var delayTask = Task.Delay(Timeout.Infinite, delayCts.Token);
+
+                    var completedTask = await Task.WhenAny(getContextTask, delayTask).ConfigureAwait(false);
+
+                    // Cancel the delay task if the getContextTask completes first
+                    if (completedTask == getContextTask)
+                    {
+                        delayCts.Cancel();
+                        _requestsQueue.Add(new RequestData(await getContextTask.ConfigureAwait(false)));
+                    }
+                    else 
+                    {
+                        _cancellationToken.ThrowIfCancellationRequested(); // This will throw if the token is cancelled while waiting for a request.
+                    }
                 }
             }
             catch (OperationCanceledException)
