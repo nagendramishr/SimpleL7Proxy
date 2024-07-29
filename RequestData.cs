@@ -43,7 +43,7 @@ protected virtual void Dispose(bool disposing)
     if (disposing)
     {
         // Dispose managed resources
-        FullURL = Path = Method = null;
+        FullURL = Path = Method = "";
 
         Body?.Dispose();
         Body = null;

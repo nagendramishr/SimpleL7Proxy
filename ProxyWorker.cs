@@ -12,19 +12,21 @@ public class ProxyWorker  {
     private static bool _debug = false;
     private  CancellationToken _cancellationToken;
     private  BlockingCollection<RequestData>? _requestsQueue; 
-    private readonly TelemetryClient? _telemetryClient;
     private readonly IBackendService _backends;
-    private readonly IEventHubClient? _eventHubClient;
     private readonly BackendOptions _options;
+    private readonly TelemetryClient? _telemetryClient;
+    private readonly IEventHubClient? _eventHubClient;
 
 
     public ProxyWorker( CancellationToken cancellationToken, BlockingCollection<RequestData> requestsQueue, BackendOptions backendOptions, IBackendService? backends, IEventHubClient? eventHubClient, TelemetryClient? telemetryClient) {
+
         _cancellationToken = cancellationToken;
         _requestsQueue = requestsQueue ?? throw new ArgumentNullException(nameof(requestsQueue));
         _backends = backends ?? throw new ArgumentNullException(nameof(backends));
         _eventHubClient = eventHubClient;
         _telemetryClient = telemetryClient;
         _options = backendOptions ?? throw new ArgumentNullException(nameof(backendOptions));
+        if (_options.Client == null) throw new ArgumentNullException(nameof(_options.Client));
     }
 
     public async Task TaskRunner() {
@@ -150,27 +152,19 @@ public class ProxyWorker  {
 
 public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requestDate, string method, string path, WebHeaderCollection headers, Stream body)//HttpListenerResponse downStreamResponse)
     {
-
-        if (_backends == null) throw new ArgumentNullException(nameof(_backends));
-        if (_options == null) throw new ArgumentNullException(nameof(_options));
-        if (_options.Client == null) throw new ArgumentNullException(nameof(_options.Client));
         if (request == null || request.Body == null || request.Headers == null || request.Method == null) throw new ArgumentNullException(nameof(request));
 
-        // Make a local copy of the active hosts
+        // Use the current active hosts
         var activeHosts = _backends.GetActiveHosts();
-        var method = request.Method;
-        var path = request.Path;
-        var headers = request.Headers;
-        var body = request.Body;
 
-        request.Debug = headers["S7PDEBUG"] == "true" || _debug;
+        request.Debug = request.Headers["S7PDEBUG"] == "true" || _debug;
         HttpStatusCode lastStatusCode = HttpStatusCode.ServiceUnavailable;
 
         // Read the body stream once and reuse it
         byte[] bodyBytes;
         using (MemoryStream ms = new MemoryStream())
         {
-            await body.CopyToAsync(ms);
+            await request.Body.CopyToAsync(ms);
             bodyBytes = ms.ToArray();
         }
         
@@ -179,26 +173,26 @@ public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requ
             // Try the request on each active host, stop if it worked
             try
             {
-                headers.Set("Host", host.host);
-                var urlWithPath = new UriBuilder(host.url) { Path = path }.Uri.AbsoluteUri;
+                request.Headers.Set("Host", host.host);
+                var urlWithPath = new UriBuilder(host.url) { Path = request.Path }.Uri.AbsoluteUri;
                 request.FullURL = System.Net.WebUtility.UrlDecode(urlWithPath);
 
                 using (var bodyContent = new ByteArrayContent(bodyBytes))
-                using (var proxyRequest = new HttpRequestMessage(new HttpMethod(method), request.FullURL))
+                using (var proxyRequest = new HttpRequestMessage(new HttpMethod(request.Method), request.FullURL))
                 {
                     proxyRequest.Content = bodyContent;
                     
-                    AddHeadersToRequest(proxyRequest, headers);
+                    AddHeadersToRequest(proxyRequest, request.Headers);
                     if (bodyBytes.Length > 0)
                     {
                         proxyRequest.Content.Headers.ContentLength = bodyBytes.Length;
 
                         // Preserve the content type if it was provided
-                        string contentType = request.Context.Request.ContentType ?? "application/octet-stream"; // Default to application/octet-stream if not specified
+                        string contentType = request.Context?.Request.ContentType ?? "application/octet-stream"; // Default to application/octet-stream if not specified
                         var mediaTypeHeaderValue = new MediaTypeHeaderValue(contentType);
 
                         // Preserve the encoding type if it was provided
-                        if (request.Context.Request.ContentType != null && request.Context.Request.ContentType.Contains("charset"))
+                        if (request.Context?.Request.ContentType != null && request.Context.Request.ContentType.Contains("charset"))
                         {
                             var charset = request.Context.Request.ContentType.Split(';').LastOrDefault(s => s.Trim().StartsWith("charset"));
                             if (charset != null)
@@ -219,7 +213,7 @@ public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requ
                     // Log request headers if debugging is enabled
                     if (request.Debug)
                     {
-                        Console.WriteLine($"> {method} {request.FullURL} {bodyBytes.Length} bytes");
+                        Console.WriteLine($"> {request.Method} {request.FullURL} {bodyBytes.Length} bytes");
                         LogHeaders(proxyRequest.Headers, ">");
                         LogHeaders(proxyRequest.Content.Headers, "  >");
                         string bodyString = System.Text.Encoding.UTF8.GetString(bodyBytes);
@@ -228,7 +222,7 @@ public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requ
 
                     // Send the request and get the response
                     var ProxyStartDate = DateTime.UtcNow;
-                    using (var proxyResponse = await _options.Client.SendAsync(proxyRequest))
+                    using (var proxyResponse = await (_options?.Client ?? throw new ArgumentNullException(nameof(_options))).SendAsync(proxyRequest))
                     {
                         var responseDate = DateTime.UtcNow;
                         lastStatusCode = proxyResponse.StatusCode;
@@ -257,7 +251,7 @@ public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requ
                         {
                             Console.WriteLine($"Got: {pr.StatusCode} {pr.FullURL} {pr.ContentHeaders["Content-Length"]} Body: {pr?.Body?.Length} bytes");  
                         }
-                        return pr;
+                        return pr ?? throw new ArgumentNullException(nameof(pr));
                     }
                 }
             }
