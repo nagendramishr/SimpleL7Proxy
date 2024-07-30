@@ -47,9 +47,9 @@ protected virtual void Dispose(bool disposing)
 
         Body?.Dispose();
         Body = null;
-        Context?.Response?.Close();
-        Context?.Response?.OutputStream?.Dispose();
         Context?.Request?.InputStream.Dispose();
+        Context?.Response?.OutputStream?.Dispose();
+        Context?.Response?.Close();
         Context = null;
     }
 }
