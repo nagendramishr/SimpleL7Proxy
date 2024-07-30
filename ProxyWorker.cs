@@ -80,6 +80,19 @@ public class ProxyWorker  {
                     pr.ContentHeaders.Clear();
                     pr.FullURL="";
                 }
+                catch (IOException ioEx) {
+                    Console.WriteLine($"An IO exception occurred: {ioEx.Message}");
+                    lcontext.Response.StatusCode = 502;
+                    var errorMessage = Encoding.UTF8.GetBytes($"Broken Pipe: {ioEx.Message}");
+                    try
+                    {
+                        await lcontext.Response.OutputStream.WriteAsync(errorMessage, 0, errorMessage.Length);
+                    }
+                    catch (Exception writeEx)
+                    {
+                        Console.WriteLine($"Failed to write error message: {writeEx.Message}");
+                    }
+                }
                 catch (Exception ex)
                 {
                     // Log the exception
@@ -89,7 +102,14 @@ public class ProxyWorker  {
                     // Set an appropriate status code for the error
                     lcontext.Response.StatusCode = 500;
                     var errorMessage = Encoding.UTF8.GetBytes("Internal Server Error");
-                    await lcontext.Response.OutputStream.WriteAsync(errorMessage, 0, errorMessage.Length);
+                    try
+                    {
+                        await lcontext.Response.OutputStream.WriteAsync(errorMessage, 0, errorMessage.Length);
+                    }
+                    catch (Exception writeEx)
+                    {
+                        Console.WriteLine($"Failed to write error message: {writeEx.Message}");
+                    } 
                 }
                 finally
                 {
@@ -284,7 +304,7 @@ public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requ
 
         return new ProxyData
         {
-            StatusCode = (HttpStatusCode)lastStatusCode,
+            StatusCode = (HttpStatusCode)502,
             Body = Encoding.UTF8.GetBytes("No active hosts were able to handle the request.")
         };
 

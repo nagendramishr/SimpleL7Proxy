@@ -71,17 +71,20 @@ public class Server : IServer
 
                     var completedTask = await Task.WhenAny(getContextTask, delayTask).ConfigureAwait(false);
 
-                    // Cancel the delay task if the getContextTask completes first
+                    // Cancel the delay task immedietly if the getContextTask completes first
                     if (completedTask == getContextTask)
                     {
                         delayCts.Cancel();
                         _requestsQueue.Add(new RequestData(await getContextTask.ConfigureAwait(false)));
                     }
-                    else 
+                    else
                     {
                         _cancellationToken.ThrowIfCancellationRequested(); // This will throw if the token is cancelled while waiting for a request.
                     }
                 }
+            }
+            catch (IOException ioEx) {
+                Console.WriteLine($"An IO exception occurred: {ioEx.Message}");
             }
             catch (OperationCanceledException)
             {
