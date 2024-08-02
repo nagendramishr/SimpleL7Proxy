@@ -7,6 +7,11 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using Microsoft.Extensions.Options;
 using System.Text;
+using Azure.Identity;
+using Azure.Core;
+using System.Security.AccessControl;
+
+
 
 public class Backends : IBackendService
 {
@@ -22,6 +27,7 @@ public class Backends : IBackendService
     private static bool _isRunning = false;
     private CancellationToken _cancellationToken;
 
+    private Azure.Core.AccessToken? AuthToken { get; set; }
 
     //public Backends(List<BackendHost> hosts, HttpClient client, int interval, int successRate)
     public Backends(IOptions<BackendOptions> options)
@@ -43,11 +49,20 @@ public class Backends : IBackendService
     {
         _cancellationToken = cancellationToken;
         Task.Run(() => Run());
+
+        if (_options.UseOAuth)
+        {
+            GetToken();
+        }
     }   
 
     public List<BackendHost> GetActiveHosts()
     {
         return _activeHosts;
+    }
+
+    public string OAuth2Token() {
+        return AuthToken?.Token ?? "";
     }
 
     public async Task waitForStartup(int timeout)
@@ -56,7 +71,10 @@ public class Backends : IBackendService
         for (int i=0; i < 10; i++ ) 
         {
             var startTimer = DateTime.Now;
-            while (!_isRunning && (DateTime.Now - startTimer).TotalSeconds < timeout)
+            // Wait for the backend poller to start or until the timeout is reached. Make sure that if a token is required, it is available.
+            while (!_isRunning && 
+                  (!_options.UseOAuth || AuthToken?.Token != "" ) && 
+                  (DateTime.Now - startTimer).TotalSeconds < timeout)
             {
                 await Task.Delay(1000, _cancellationToken); // Use Task.Delay with cancellation token
                 if (_cancellationToken.IsCancellationRequested)
@@ -76,6 +94,7 @@ public class Backends : IBackendService
         }
         throw new Exception("Backend Poller did not start in time.");
     }
+    
     Dictionary<string, bool> currentHostStatus = new Dictionary<string, bool>();
     private async Task Run() {
 
@@ -235,6 +254,7 @@ public class Backends : IBackendService
                 sb.Append($"{statusIndicator} Host: {host.url} Lat: {roundedLatency}ms Succ: {successRatePercentage}% {hoststatus}\n");
             }
 
+
         _lastStatusDisplay = DateTime.Now;
         _hostStatus = sb.ToString();
         Console.WriteLine(_hostStatus);
@@ -250,4 +270,62 @@ public class Backends : IBackendService
         }
     }
 
+    
+    // Fetches the OAuth2 Token as a seperate task. The token is fetched and updated 15 miutes before it expires. 
+    public void GetToken() {
+        Task.Run(async () => { 
+            try { 
+                // Loop until a cancellation is requested
+                while (!_cancellationToken.IsCancellationRequested) {
+                    // Fetch the authentication token asynchronously
+                    AuthToken = await GetTokenAsync();
+
+                    // Calculate the time to refresh the token, 15 minutes before it expires
+                    var refreshTime = AuthToken?.ExpiresOn - DateTimeOffset.Now - TimeSpan.FromMinutes(15);
+                    Console.WriteLine($"Auth Token expires on: {AuthToken?.ExpiresOn} Refresh in: {refreshTime} (15 mins grace )");
+
+                    // Wait for the calculated refresh time or until a cancellation is requested
+                    await Task.Delay((int)refreshTime.Value.TotalMilliseconds, _cancellationToken);
+
+                }
+            } 
+            catch (OperationCanceledException) {
+                // Handle the cancellation request (e.g., break the loop, log the cancellation, etc.)
+                Console.WriteLine("Exiting fetching Auth Token: Operation was canceled.");
+            }   
+            catch (Exception e) {
+                // Handle any unexpected errors that occur during token fetching
+                Console.WriteLine($"An unexpected error occurred while fetching Auth Token: {e.Message}");
+            }
+        }, _cancellationToken);
+    }
+
+    public async Task<AccessToken> GetTokenAsync()
+    {
+        try
+        {
+           // var credential = new DefaultAzureCredential();
+            var credential = new ManagedIdentityCredential();
+            //var context = new TokenRequestContext(new[] { "api://063f9ca6-cccc-4bb8-b652-f3410eabe329" });
+            var context = new TokenRequestContext(new[] { _options.OAuthAudience });
+            var token = await credential.GetTokenAsync(context);
+
+            
+            //DateTimeOffset expiresOn = token.ExpiresOn;
+            //Console.WriteLine($"Token expires on: {expiresOn}");
+            return token;
+        }
+        catch (AuthenticationFailedException ex)
+        {
+            Console.WriteLine($"Authentication failed: {ex.Message}");
+            // Handle the exception as needed, e.g., return a default value or rethrow the exception
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"An unexpected error occurred: {ex.Message}");
+            // Handle other potential exceptions
+            throw;
+        }
+    }
 }
