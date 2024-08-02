@@ -187,6 +187,16 @@ public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requ
             await request.Body.CopyToAsync(ms);
             bodyBytes = ms.ToArray();
         }
+
+        if (_options.UseOAuth) {
+            // Get a token
+            var token = _backends.OAuth2Token();
+            if (request.Debug)  {
+                Console.WriteLine("Token: " + token);
+            }
+            // Set the token in the headers
+            request.Headers.Set("Authorization", $"Bearer {token}");
+        }
         
         foreach (var host in activeHosts)
         {
@@ -250,8 +260,25 @@ public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requ
                         // Check if the status code of the response is in the set of allowed status codes, else try the next host
                        if (((int)proxyResponse.StatusCode > 300 &&  (int)proxyResponse.StatusCode < 400) || (int)proxyResponse.StatusCode > 500)
                        {
-                           if (request.Debug)
+
+                           if (request.Debug) {
+                               try {
+                                    var temp_pr = new ProxyData()
+                                    {
+                                        ResponseDate = responseDate,
+                                        StatusCode = proxyResponse.StatusCode,
+                                        FullURL = request.FullURL,
+                                    };
+                                    bodyBytes = [];
+                                    await GetProxyResponseAsync(proxyResponse, request, temp_pr);
+                                    Console.WriteLine($"Got: {temp_pr.StatusCode} {temp_pr.FullURL} {temp_pr.ContentHeaders["Content-Length"]} Body: {temp_pr?.Body?.Length} bytes"); 
+                                    Console.WriteLine($"< {temp_pr?.Body }"); 
+                               } catch (Exception e) {
+                                    Console.WriteLine($"Error reading from remote host: {e.Message}");
+                               }
+
                                Console.WriteLine($"Trying next host: Response: {proxyResponse.StatusCode}");
+                           }
                            continue;
                        }
 

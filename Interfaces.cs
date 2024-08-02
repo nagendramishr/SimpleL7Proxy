@@ -4,6 +4,7 @@ public interface IBackendService
     public List<BackendHost> GetActiveHosts();
     public Task waitForStartup(int timeout);
     public string HostStatus();
+    public string OAuth2Token();
 }
 
 public interface IEventHubClient

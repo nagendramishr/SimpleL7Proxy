@@ -9,6 +9,9 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.ApplicationInsights.WorkerService;
 using Microsoft.Extensions.Logging;
 using System.Threading.Tasks;
+using Azure.Identity;
+using Azure.Core;
+
 
 public class Program
 {
@@ -17,11 +20,22 @@ public class Program
     public static TelemetryClient? telemetryClient;
 
     static CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
+    public string OAuthAudience { get; set; } ="";  
+
 
     public static async Task Main(string[] args)
     {
         var cancellationToken = cancellationTokenSource.Token;
         var backendOptions = LoadBackendOptions();
+
+        // Set up logging
+        using var loggerFactory = LoggerFactory.Create(builder =>
+        {
+            builder.AddConsole();
+            builder.AddFilter("Azure.Identity", LogLevel.Debug);
+        });
+
+        var logger = loggerFactory.CreateLogger<Program>();
 
         Console.CancelKeyPress += (sender, e) =>
             {
@@ -43,6 +57,8 @@ public class Program
                     options.Hosts = backendOptions.Hosts;
                     options.Client = backendOptions.Client;
                     options.Workers = backendOptions.Workers;
+                    options.OAuthAudience = backendOptions.OAuthAudience;
+                    options.UseOAuth = backendOptions.UseOAuth;
                 });
 
                 services.AddLogging(loggingBuilder => loggingBuilder.AddFilter<Microsoft.Extensions.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider>("Category", LogLevel.Information));
@@ -68,6 +84,7 @@ public class Program
                 services.AddSingleton<IBackendOptions>(backendOptions);
                 services.AddSingleton<IBackendService, Backends>();
                 services.AddSingleton<IServer, Server>();
+                
                 
                 // Add other necessary service registrations here
             });
@@ -139,7 +156,7 @@ public class Program
     {
         if (!int.TryParse(OS.Environment.GetEnvironmentVariable(variableName), out var value))
         {
-            Console.WriteLine($"Invalid or missing {variableName}. Using default: {defaultValue}");
+            Console.WriteLine($"Using default:   {variableName}: {defaultValue}");
             return defaultValue;
         }
         return value;
@@ -166,6 +183,8 @@ public class Program
             Timeout = ReadEnvironmentVariableOrDefault("Timeout", 3000),
             PollTimeout = ReadEnvironmentVariableOrDefault("PollTimeout", 3000),
             Workers = ReadEnvironmentVariableOrDefault("Workers", 10),
+            OAuthAudience = Environment.GetEnvironmentVariable("OAuthAudience")?.Trim() ?? "",
+            UseOAuth = Environment.GetEnvironmentVariable("UseOAuth")?.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) == true,
             Client = _client, 
             Hosts = new List<BackendHost>()
         };
@@ -220,7 +239,7 @@ public class Program
         Console.WriteLine("#     #  # #    # #      #      #      #         #     #      #   #  #    #  #  #    #");
         Console.WriteLine(" #####   # #    # #      ###### ###### #######   #     #      #    #  ####  #    #   #");
         Console.WriteLine ("=======================================================================================");
-    
+
         return backendOptions;
     }
 }
