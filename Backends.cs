@@ -170,6 +170,11 @@ public class Backends : IBackendService
             Console.WriteLine($"Checking host {host.url + host.probe_path}");
 
         var request = new HttpRequestMessage(HttpMethod.Get, host.probeurl);
+        if (_options.UseOAuth)
+        {
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", OAuth2Token());
+        }
+
         var stopwatch = Stopwatch.StartNew();
 
         try
@@ -304,15 +309,10 @@ public class Backends : IBackendService
     {
         try
         {
-           // var credential = new DefaultAzureCredential();
-            var credential = new ManagedIdentityCredential();
-            //var context = new TokenRequestContext(new[] { "api://063f9ca6-cccc-4bb8-b652-f3410eabe329" });
+            var credential = new DefaultAzureCredential();
             var context = new TokenRequestContext(new[] { _options.OAuthAudience });
             var token = await credential.GetTokenAsync(context);
 
-            
-            //DateTimeOffset expiresOn = token.ExpiresOn;
-            //Console.WriteLine($"Token expires on: {expiresOn}");
             return token;
         }
         catch (AuthenticationFailedException ex)
