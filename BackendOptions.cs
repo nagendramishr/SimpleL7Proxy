@@ -7,6 +7,8 @@ public class BackendOptions : IBackendOptions
     public int Timeout { get; set; }
 
     public int Workers { get; set; }
+    public string PriorityKey1 { get; set; } = "";
+    public string PriorityKey2 { get; set; } ="";
     public string OAuthAudience { get; set; } = "";
     public bool UseOAuth { get; set; }
 
