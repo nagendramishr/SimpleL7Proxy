@@ -24,18 +24,8 @@ public class PriorityQueue<T>
     {
         var queueItem = new PriorityQueueItem<T>(item, priority);
         _items.Add(queueItem);
-//        _items.Sort((x, y) => x.Priority.CompareTo(y.Priority));
-        // _items.Sort((x, y) =>
-        // {
-        //     int priorityComparison = x.Priority.CompareTo(y.Priority);
-        //     if (priorityComparison == 0)
-        //     {
-        //         // If priorities are equal, sort by timestamp (older items are "bigger")
-        //         return y.Timestamp.CompareTo(x.Timestamp);
-        //     }
-        //     return priorityComparison;
-        // });
 
+        // inserting into a sorted list is best with binary search:  O(n)
         int index = _items.BinarySearch(queueItem, Comparer);
         if (index < 0) index = ~index; // If not found, BinarySearch returns the bitwise complement of the index of the next element that is larger.
         _items.Insert(index, queueItem);
