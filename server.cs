@@ -10,7 +10,8 @@ public class Server : IServer
     private readonly TelemetryClient? _telemetryClient; // Add this line
     private HttpListener httpListener;
     private CancellationToken _cancellationToken;
-    private BlockingCollection<RequestData> _requestsQueue = new BlockingCollection<RequestData>();
+    //private BlockingCollection<RequestData> _requestsQueue = new BlockingCollection<RequestData>();
+    private BlockingPriorityQueue<RequestData> _requestsQueue = new BlockingPriorityQueue<RequestData>();
 
     public Server(IOptions<BackendOptions> backendOptions, TelemetryClient? telemetryClient)
     {
@@ -29,7 +30,8 @@ public class Server : IServer
         Console.WriteLine($"Server configuration:  Port: {_options.Port} Timeout: {timeoutTime} Workers: {_options.Workers}");
     }
 
-    public BlockingCollection<RequestData> Start(CancellationToken cancellationToken)
+    //public BlockingCollection<RequestData> Start(CancellationToken cancellationToken)
+    public BlockingPriorityQueue<RequestData> Start(CancellationToken cancellationToken)
     {
         try
         {
@@ -75,7 +77,22 @@ public class Server : IServer
                     if (completedTask == getContextTask)
                     {
                         delayCts.Cancel();
-                        _requestsQueue.Add(new RequestData(await getContextTask.ConfigureAwait(false)));
+                       // _requestsQueue.Add(new RequestData(await getContextTask.ConfigureAwait(false)));
+                        var rd = new RequestData(await getContextTask.ConfigureAwait(false));
+                        int priority = 1;
+                        var priorityKey = rd.Headers.Get("S7PPriorityKey");
+                        if (priorityKey != null && (priorityKey == _options.PriorityKey1 || priorityKey == _options.PriorityKey2))
+                        {
+                            var priorityHeader = rd.Headers.Get("S7PPriority");
+                            if (priorityHeader != null && int.TryParse(priorityHeader, out var parsedPriority))
+                            {
+                                priority = parsedPriority;
+                            }
+                        }
+                        rd.Priority = priority;
+
+                        //_requestsQueue.Enqueue(new RequestData(await getContextTask.ConfigureAwait(false)));
+                        _requestsQueue.Enqueue(rd, priority);
                     }
                     else
                     {
