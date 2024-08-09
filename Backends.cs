@@ -285,12 +285,21 @@ public class Backends : IBackendService
                     // Fetch the authentication token asynchronously
                     AuthToken = await GetTokenAsync();
 
-                    // Calculate the time to refresh the token, 15 minutes before it expires
-                    var refreshTime = AuthToken?.ExpiresOn - DateTimeOffset.Now - TimeSpan.FromMinutes(15);
-                    Console.WriteLine($"Auth Token expires on: {AuthToken?.ExpiresOn} Refresh in: {refreshTime} (15 mins grace )");
+                    if (AuthToken != null)
+                    {
+                        // Calculate the time to refresh the token, 15 minutes before it expires
+                        var refreshTime = AuthToken?.ExpiresOn - DateTimeOffset.Now - TimeSpan.FromMinutes(15);
+                        Console.WriteLine($"Auth Token expires on: {AuthToken?.ExpiresOn} Refresh in: {refreshTime} (15 mins grace)");
 
-                    // Wait for the calculated refresh time or until a cancellation is requested
-                    await Task.Delay((int)refreshTime.Value.TotalMilliseconds, _cancellationToken);
+                        // Wait for the calculated refresh time or until a cancellation is requested
+                        await Task.Delay((int)refreshTime?.TotalMilliseconds, _cancellationToken);
+                    }
+                    else
+                    {
+                        // Handle the case where the token is null
+                        Console.WriteLine("Auth Token is null. Retrying in 10 seconds.");
+                        await Task.Delay(TimeSpan.FromMilliseconds(10000), _cancellationToken);
+                    }
 
                 }
             } 
