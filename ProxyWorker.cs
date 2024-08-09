@@ -11,15 +11,17 @@ public class ProxyWorker  {
 
     private static bool _debug = false;
     private  CancellationToken _cancellationToken;
-    private  BlockingCollection<RequestData>? _requestsQueue; 
+    //private  BlockingCollection<RequestData>? _requestsQueue; 
+    private  BlockingPriorityQueue<RequestData>? _requestsQueue; 
     private readonly IBackendService _backends;
     private readonly BackendOptions _options;
     private readonly TelemetryClient? _telemetryClient;
     private readonly IEventHubClient? _eventHubClient;
 
 
-    public ProxyWorker( CancellationToken cancellationToken, BlockingCollection<RequestData> requestsQueue, BackendOptions backendOptions, IBackendService? backends, IEventHubClient? eventHubClient, TelemetryClient? telemetryClient) {
-
+    //public ProxyWorker( CancellationToken cancellationToken, BlockingCollection<RequestData> requestsQueue, BackendOptions backendOptions, IBackendService? backends, IEventHubClient? eventHubClient, TelemetryClient? telemetryClient) {
+    public ProxyWorker(CancellationToken cancellationToken, BlockingPriorityQueue<RequestData> requestsQueue, BackendOptions backendOptions, IBackendService? backends, IEventHubClient? eventHubClient, TelemetryClient? telemetryClient) 
+    {
         _cancellationToken = cancellationToken;
         _requestsQueue = requestsQueue ?? throw new ArgumentNullException(nameof(requestsQueue));
         _backends = backends ?? throw new ArgumentNullException(nameof(backends));
@@ -37,7 +39,8 @@ public class ProxyWorker  {
             RequestData incomingRequest;
             try
             {
-                incomingRequest = _requestsQueue.Take(_cancellationToken); // This will block until an item is available or the token is cancelled
+                //incomingRequest = _requestsQueue.Take(_cancellationToken); // This will block until an item is available or the token is cancelled
+                incomingRequest = _requestsQueue.Dequeue(_cancellationToken);
             }
             catch (OperationCanceledException)
             {
@@ -71,7 +74,7 @@ public class ProxyWorker  {
                     var pr = await ReadProxyAsync(incomingRequest).ConfigureAwait(false);
                     await WriteResponseAsync(lcontext, pr).ConfigureAwait(false);
 
-                    Console.WriteLine($"URL: {pr.FullURL} Length: {pr.ContentHeaders["Content-Length"]} Status: {(int)pr.StatusCode}");
+                    Console.WriteLine($"Pri: {incomingRequest.Priority} Stat: {(int)pr.StatusCode} Len: {pr.ContentHeaders["Content-Length"]} {pr.FullURL}");
 
                     if (_eventHubClient != null)
                         SendEventData(pr.FullURL, pr.StatusCode, incomingRequest.Timestamp, pr.ResponseDate);
@@ -95,6 +98,11 @@ public class ProxyWorker  {
                 }
                 catch (Exception ex)
                 {
+                    if (ex.Message == "Cannot access a disposed object.") // The client likely closed the connection
+                    {
+                        Console.WriteLine($"Client closed connection: {incomingRequest.FullURL}");
+                        continue;
+                    }
                     // Log the exception
                     Console.WriteLine($"Exception: {ex.Message}");
                     Console.WriteLine($"Stack Trace: {ex.StackTrace}");
@@ -103,7 +111,13 @@ public class ProxyWorker  {
                     lcontext.Response.StatusCode = 500;
                     var errorMessage = Encoding.UTF8.GetBytes("Internal Server Error");
                     try
-                    {
+                    { 
+                        Dictionary<string, string> prop = new Dictionary<string, string>();
+                        prop["Method"] = incomingRequest.Method;
+                        prop["Path"] = incomingRequest.Path;
+                        prop["StatusCode"] = lcontext.Response.StatusCode.ToString();
+                        prop["Message"] = ex.Message;
+                        _telemetryClient?.TrackException(ex, prop);
                         await lcontext.Response.OutputStream.WriteAsync(errorMessage, 0, errorMessage.Length);
                     }
                     catch (Exception writeEx)
@@ -114,13 +128,13 @@ public class ProxyWorker  {
                 finally
                 {
                     _telemetryClient?.TrackRequest($"{incomingRequest.Method} {incomingRequest.Path}", 
-                    DateTimeOffset.UtcNow, new TimeSpan(0, 0, 0), $"{lcontext.Response.StatusCode}", true);
+                        DateTimeOffset.UtcNow, new TimeSpan(0, 0, 0), $"{lcontext.Response.StatusCode}", true);
                 }
             }
         }
     }
 
-    private async Task WriteResponseAsync(HttpListenerContext context, ProxyData pr)
+    private async Task WriteResponseAsync(HttpListenerContext context, ProxyData pr) 
     {
         // Set the response status code
         context.Response.StatusCode = (int)pr.StatusCode;
@@ -172,7 +186,10 @@ public class ProxyWorker  {
 
 public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requestDate, string method, string path, WebHeaderCollection headers, Stream body)//HttpListenerResponse downStreamResponse)
     {
-        if (request == null || request.Body == null || request.Headers == null || request.Method == null) throw new ArgumentNullException(nameof(request));
+        if (request == null) throw new ArgumentNullException(nameof(request), "Request cannot be null.");
+        if (request.Body == null) throw new ArgumentNullException(nameof(request.Body), "Request body cannot be null.");
+        if (request.Headers == null) throw new ArgumentNullException(nameof(request.Headers), "Request headers cannot be null.");
+        if (request.Method == null) throw new ArgumentNullException(nameof(request.Method), "Request method cannot be null.");
 
         // Use the current active hosts
         var activeHosts = _backends.GetActiveHosts();
@@ -305,21 +322,25 @@ public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requ
 
             catch (TaskCanceledException)
             {
-                lastStatusCode = HandleError(host, null, request.Timestamp, request.FullURL, HttpStatusCode.RequestTimeout, "Request to " + host.url + " timed out");
+                // 408 Request Timeout
+                lastStatusCode = HandleError(host, null, request.Timestamp, request.FullURL, HttpStatusCode.RequestTimeout, "Request to " + host.url + " timed out"); 
                 continue;
             }
             catch (OperationCanceledException e)
             {
+                // 502 Bad Gateway
                 lastStatusCode = HandleError(host, e, request.Timestamp, request.FullURL, HttpStatusCode.BadGateway, "Request to " + host.url + " was cancelled");
                 continue;
             }
             catch (HttpRequestException e)
             {
+                // 400 Bad Request
                 lastStatusCode = HandleError(host, e, request.Timestamp, request.FullURL, HttpStatusCode.BadRequest);
                 continue;
             }
             catch (Exception e)
             {
+                // 500 Internal Server Error
                 Console.WriteLine($"Error: {e.StackTrace}");
                 Console.WriteLine($"Error: {e.Message}");
                 lastStatusCode = HandleError(host, e, request.Timestamp, request.FullURL, HttpStatusCode.InternalServerError);
@@ -331,7 +352,8 @@ public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requ
 
         return new ProxyData
         {
-            StatusCode = (HttpStatusCode)502,
+            // 502 Bad Gateway
+            StatusCode = HttpStatusCode.BadGateway,
             Body = Encoding.UTF8.GetBytes("No active hosts were able to handle the request.")
         };
 
@@ -391,7 +413,7 @@ public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requ
         foreach (string? key in sourceHeaders.AllKeys)
         {
             if (key == null) continue;
-            if ( !ignoreHeaders ||  (!key.StartsWith("x-", StringComparison.OrdinalIgnoreCase) &&  !key.Equals("content-length", StringComparison.OrdinalIgnoreCase)))
+            if ( !ignoreHeaders ||  (!key.StartsWith("S7P") && !key.StartsWith("x-", StringComparison.OrdinalIgnoreCase) &&  !key.Equals("content-length", StringComparison.OrdinalIgnoreCase)))
             {
                 targetMessage?.Headers.TryAddWithoutValidation(key, sourceHeaders[key]);
             }
