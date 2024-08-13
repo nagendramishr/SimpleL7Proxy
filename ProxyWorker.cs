@@ -413,7 +413,7 @@ public async Task<ProxyData> ReadProxyAsync(RequestData request) //DateTime requ
         foreach (string? key in sourceHeaders.AllKeys)
         {
             if (key == null) continue;
-            if ( !ignoreHeaders ||  (!key.StartsWith("S7P") && !key.StartsWith("x-", StringComparison.OrdinalIgnoreCase) &&  !key.Equals("content-length", StringComparison.OrdinalIgnoreCase)))
+            if ( !ignoreHeaders ||  (!key.StartsWith("S7P") && !key.StartsWith("Authorization", StringComparison.OrdinalIgnoreCase) && !key.StartsWith("x-", StringComparison.OrdinalIgnoreCase) &&  !key.Equals("content-length", StringComparison.OrdinalIgnoreCase)))
             {
                 targetMessage?.Headers.TryAddWithoutValidation(key, sourceHeaders[key]);
             }
