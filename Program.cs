@@ -59,6 +59,8 @@ public class Program
                     options.Workers = backendOptions.Workers;
                     options.OAuthAudience = backendOptions.OAuthAudience;
                     options.UseOAuth = backendOptions.UseOAuth;
+                    options.PriorityKey1 = backendOptions.PriorityKey1;
+                    options.PriorityKey2 = backendOptions.PriorityKey2;
                 });
 
                 services.AddLogging(loggingBuilder => loggingBuilder.AddFilter<Microsoft.Extensions.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider>("Category", LogLevel.Information));
@@ -161,6 +163,16 @@ public class Program
         }
         return value;
     }
+    private static string ReadEnvironmentVariableOrDefault(string variableName, string defaultValue)
+    {
+        var envValue = Environment.GetEnvironmentVariable(variableName);
+        if (string.IsNullOrEmpty(envValue))
+        {
+            Console.WriteLine($"Using default: {variableName}: {defaultValue}");
+            return defaultValue;
+        }
+        return envValue.Trim();
+    }
 
      private static BackendOptions LoadBackendOptions()
     {
@@ -183,8 +195,10 @@ public class Program
             Timeout = ReadEnvironmentVariableOrDefault("Timeout", 3000),
             PollTimeout = ReadEnvironmentVariableOrDefault("PollTimeout", 3000),
             Workers = ReadEnvironmentVariableOrDefault("Workers", 10),
-            OAuthAudience = Environment.GetEnvironmentVariable("OAuthAudience")?.Trim() ?? "",
+            OAuthAudience = ReadEnvironmentVariableOrDefault("OAuthAudience", ""),
             UseOAuth = Environment.GetEnvironmentVariable("UseOAuth")?.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) == true,
+            PriorityKey1 = ReadEnvironmentVariableOrDefault("PriorityKey1", "12345"),
+            PriorityKey2 = ReadEnvironmentVariableOrDefault("PriorityKey2", "67890"),
             Client = _client, 
             Hosts = new List<BackendHost>()
         };

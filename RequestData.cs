@@ -14,6 +14,8 @@ public class RequestData : IDisposable, IAsyncDisposable
     public string FullURL { get;  set; }
     public bool Debug { get; set; } 
 
+    public int Priority { get; set; }
+
     public RequestData(HttpListenerContext context)
     {
         if (context.Request.Url?.PathAndQuery == null)
