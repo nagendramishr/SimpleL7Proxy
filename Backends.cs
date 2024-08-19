@@ -10,6 +10,7 @@ using System.Text;
 using Azure.Identity;
 using Azure.Core;
 using System.Security.AccessControl;
+using Microsoft.VisualBasic;
 
 
 
@@ -62,6 +63,10 @@ public class Backends : IBackendService
     }
 
     public string OAuth2Token() {
+        while (AuthToken?.ExpiresOn < DateTime.UtcNow)
+        {
+            Task.Delay(100).Wait();
+        }
         return AuthToken?.Token ?? "";
     }
 
@@ -285,12 +290,28 @@ public class Backends : IBackendService
                     // Fetch the authentication token asynchronously
                     AuthToken = await GetTokenAsync();
 
-                    // Calculate the time to refresh the token, 15 minutes before it expires
-                    var refreshTime = AuthToken?.ExpiresOn - DateTimeOffset.Now - TimeSpan.FromMinutes(15);
-                    Console.WriteLine($"Auth Token expires on: {AuthToken?.ExpiresOn} Refresh in: {refreshTime} (15 mins grace )");
+                    if (AuthToken.HasValue)
+                    {
+                        var timeout =(AuthToken?.ExpiresOn - DateTimeOffset.UtcNow).Value.TotalMilliseconds;
 
-                    // Wait for the calculated refresh time or until a cancellation is requested
-                    await Task.Delay((int)refreshTime.Value.TotalMilliseconds, _cancellationToken);
+                        if ( timeout < 500 )
+                        {
+                            Console.WriteLine($"Auth Token is about to expire. Retrying in {timeout} ms.");
+                            await Task.Delay((int)timeout, _cancellationToken);
+                        } else {
+                            // Calculate the time to refresh the token, 100 ms before it expires
+                            var refreshTime = timeout - 100;
+                            Console.WriteLine($"Auth Token expires on: {AuthToken?.ExpiresOn} Refresh in: {FormatMilliseconds(refreshTime)} (100 ms grace)");
+                            // Wait for the calculated refresh time or until a cancellation is requested
+                            await Task.Delay((int)refreshTime, _cancellationToken);
+                        }
+                    }
+                    else
+                    {
+                        // Handle the case where the token is null
+                        Console.WriteLine("Auth Token is null. Retrying in 10 seconds.");
+                        await Task.Delay(TimeSpan.FromMilliseconds(10000), _cancellationToken);
+                    }
 
                 }
             } 
@@ -303,6 +324,16 @@ public class Backends : IBackendService
                 Console.WriteLine($"An unexpected error occurred while fetching Auth Token: {e.Message}");
             }
         }, _cancellationToken);
+    }
+
+    public static string FormatMilliseconds(double milliseconds)
+    {
+        TimeSpan timeSpan = TimeSpan.FromMilliseconds(milliseconds);
+        return string.Format("{0:D2}:{1:D2}:{2:D2} {3:D3} milliseconds",
+                             timeSpan.Hours,
+                             timeSpan.Minutes,
+                             timeSpan.Seconds,
+                             timeSpan.Milliseconds);
     }
 
     public async Task<AccessToken> GetTokenAsync()
