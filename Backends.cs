@@ -13,6 +13,10 @@ using System.Security.AccessControl;
 
 
 
+// This code has 3 objectives:  
+// * Check the status of each backend host and measure its latency
+// * Filter the active hosts based on the success rate
+// * Fetch the OAuth2 token and refresh it 100ms minutes before it expires
 public class Backends : IBackendService
 {
     private List<BackendHost> _hosts;
@@ -280,7 +284,7 @@ public class Backends : IBackendService
     }
 
     
-    // Fetches the OAuth2 Token as a seperate task. The token is fetched and updated 15 miutes before it expires. 
+    // Fetches the OAuth2 Token as a seperate task. The token is fetched and updated 100ms before it expires. 
     public void GetToken() {
         Task.Run(async () => { 
             try { 

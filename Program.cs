@@ -13,6 +13,17 @@ using Azure.Identity;
 using Azure.Core;
 
 
+// This code serves as the entry point for the .NET application.
+// It sets up the necessary configurations, including logging and telemetry.
+// The Main method is asynchronous and initializes the application, 
+// setting up logging and loading backend options for further processing.
+
+// The reads all the environment variables and sets up dependency injection for the application.
+// After reading the configuration, it starts up the backend pollers and eventhub client.
+// Once the backend indicates that it is ready, it starts up the server listener and worker tasks.
+
+// a single cancelation token is shared and used to signal the application to shut down.
+
 public class Program
 {
     private static HttpClient hc = new HttpClient();
@@ -154,6 +165,8 @@ public class Program
         }
     }
 
+    // Rreads an environment variable and returns its value as an integer.
+    // If the environment variable is not set, it returns the provided default value.
     private static int ReadEnvironmentVariableOrDefault(string variableName, int defaultValue)
     {
         if (!int.TryParse(OS.Environment.GetEnvironmentVariable(variableName), out var value))
@@ -163,6 +176,9 @@ public class Program
         }
         return value;
     }
+
+    // Rreads an environment variable and returns its value as a string.
+    // If the environment variable is not set, it returns the provided default value.
     private static string ReadEnvironmentVariableOrDefault(string variableName, string defaultValue)
     {
         var envValue = Environment.GetEnvironmentVariable(variableName);
@@ -174,11 +190,17 @@ public class Program
         return envValue.Trim();
     }
 
+    // Loads backend options from environment variables or uses default values if the variables are not set.
+    // It also configures the DNS refresh timeout and sets up an HttpClient instance.
+    // If the IgnoreSSLCert environment variable is set to true, it configures the HttpClient to ignore SSL certificate errors.
+    // If the AppendHostsFile environment variable is set to true, it appends the IP addresses and hostnames to the /etc/hosts file.
      private static BackendOptions LoadBackendOptions()
     {
+        // Read and set the DNS refresh timeout from environment variables or use the default value
         var DNSTimeout= ReadEnvironmentVariableOrDefault("DnsRefreshTimeout", 120000);
         ServicePointManager.DnsRefreshTimeout = DNSTimeout;
 
+        // Initialize HttpClient and configure it to ignore SSL certificate errors if specified in environment variables.
         HttpClient _client = new HttpClient();
         if (Environment.GetEnvironmentVariable("IgnoreSSLCert")?.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) == true) {
             var handler = new HttpClientHandler();
@@ -186,7 +208,7 @@ public class Program
             _client = new HttpClient(handler);
         }
 
-
+        // Create and return a BackendOptions object populated with values from environment variables or default values.
         var backendOptions = new BackendOptions
         {
             Port = ReadEnvironmentVariableOrDefault("Port", 443),
@@ -253,6 +275,7 @@ public class Program
         Console.WriteLine("#     #  # #    # #      #      #      #         #     #      #   #  #    #  #  #    #");
         Console.WriteLine(" #####   # #    # #      ###### ###### #######   #     #      #    #  ####  #    #   #");
         Console.WriteLine ("=======================================================================================");
+        Console.WriteLine("Version: 1.0.0");
 
         return backendOptions;
     }

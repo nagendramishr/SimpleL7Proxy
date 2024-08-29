@@ -1,5 +1,7 @@
 using System.Net;
 
+
+// This class represents the data returned from the downstream host.
 public class ProxyData
 {
     public HttpStatusCode StatusCode { get; set; }

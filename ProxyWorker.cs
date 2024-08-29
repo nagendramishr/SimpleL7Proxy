@@ -7,6 +7,14 @@ using System.Text;
 using Microsoft.ApplicationInsights;
 using Microsoft.ApplicationInsights.DataContracts;
 
+
+// The ProxyWorker class has the following main objectives:
+// 1. Read incoming requests from the queue, prioritizing the highest priority requests.
+// 2. Proxy the request to the backend with the lowest latency.
+// 3. Retry against the next backend if the current backend fails.
+// 4. Return a 502 Bad Gateway if all backends fail.
+// 5. Return a 200 OK with backend server stats if the request is for /health.
+// 6. Log telemetry data for each request.
 public class ProxyWorker  {
 
     private static bool _debug = false;

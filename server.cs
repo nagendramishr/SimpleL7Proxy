@@ -4,6 +4,9 @@ using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
 
 
+// This class represents a server that listens for HTTP requests and processes them.
+// It uses a priority queue to manage incoming requests and supports telemetry for monitoring.
+// If the incoming request has the S7PPriorityKey header, it will be assigned a priority based the S7PPriority header.
 public class Server : IServer
 {
     private IBackendOptions? _options;
@@ -13,6 +16,8 @@ public class Server : IServer
     //private BlockingCollection<RequestData> _requestsQueue = new BlockingCollection<RequestData>();
     private BlockingPriorityQueue<RequestData> _requestsQueue = new BlockingPriorityQueue<RequestData>();
 
+
+    // Constructor to initialize the server with backend options and telemetry client.
     public Server(IOptions<BackendOptions> backendOptions, TelemetryClient? telemetryClient)
     {
         if (backendOptions == null) throw new ArgumentNullException(nameof(backendOptions));
@@ -30,7 +35,7 @@ public class Server : IServer
         Console.WriteLine($"Server configuration:  Port: {_options.Port} Timeout: {timeoutTime} Workers: {_options.Workers}");
     }
 
-    //public BlockingCollection<RequestData> Start(CancellationToken cancellationToken)
+    // Method to start the server and begin processing requests.
     public BlockingPriorityQueue<RequestData> Start(CancellationToken cancellationToken)
     {
         try
@@ -57,6 +62,10 @@ public class Server : IServer
         }
     }
 
+    // Continuously listens for incoming HTTP requests and processes them.
+    // Requests are enqueued with a priority based on specific headers.
+    // The method runs until a cancellation is requested.
+    // Each request is enqueued with a priority into BlockingPriorityQueue.
     public async Task Run()
     {
         if (_options == null) throw new ArgumentNullException(nameof(_options));

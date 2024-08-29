@@ -3,6 +3,8 @@ using System.IO;
 using System.Net;
 using System.Threading.Tasks;
 
+// This class represents the request received from the upstream client.
+
 public class RequestData : IDisposable, IAsyncDisposable
 {
     public HttpListenerContext? Context { get; private set; }
