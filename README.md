@@ -40,15 +40,23 @@ SimpleL7Proxy can be run standalone on the commandline or it can be deployed as 
 | |
 | **IP1, IP2, ...** | Used to specify the IP address of hosts if DNS is unavailable.  Must define Host, IP and APPENDHOSTSFILE and run as container for this to work. |
 | |
+|**OAuthAudience** | The audience to fetch the Oauth token for.  Used in combination with UseOauth.  | |
+| |
 |**PollInterval** | This variable is used to specify the interval (in milliseconds) at which the application will poll the backend servers. | 15000 |
 | |
 |**Port** | Specifies the port number that the server will listen on. | 443 |
+| |
+|**PriorityKey1** | If the incoming request has the header 'S7PPriorityKey' set to this value,  use the value of S7PPriority as the priority. | |
+| |
+|**PriorityKey2** | This is the secondary key.  If the incoming request has the header 'S7PPriorityKey' set to this value,  use the value of S7PPriority as the priority.| |
 | |
 |**Probe_path1, Probe_path2, ...** | Specifies the probe paths for the corresponding backend hosts. If a Host variable is set, the application will attempt to read the corresponding Probe_path variable when creating the BackendHost instance. | echo/resource?param1=sample |
 | |
 |**Success-rate** | The percentage success rate required to be used for proxying.  Any host whose success rate is lower will not be in rotation. | 80 |
 | |
 |**Timeout** | The connection timeout for each backend.  If the proxy times out, it will try the next host. | 3000 |
+| |
+|**UseOauth** | Enable the Oauth token fetch.  Should be used in combination with OAuthAudience. | false |
 | |
 |**Workers** | The number of proxy worker threads. | 10 |
 | |
