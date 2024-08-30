@@ -105,7 +105,7 @@ echo "export DIRECTORY_OBJECT_ID=$directory_object_id"
 echo "export APP_NAME=$appname"
 echo "export RESOURCE_ID=$RESOURCE_ID"
 
-echo 'enableCAAuth.sh -g <resourcegroup> -n <container_app_name> -t $DIRECTORY_OBJECT_ID -c $CONTAINER_APP_ID -s $CONTAINER_APP_PASSWORD -a $SP_CLIENT_ID'
+echo 'enableContainerAppAuth.sh -g <resourcegroup> -n <container_app_name> -t $DIRECTORY_OBJECT_ID -c $CONTAINER_APP_ID -s $CONTAINER_APP_PASSWORD -a $SP_CLIENT_ID'
 
 
 
