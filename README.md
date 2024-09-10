@@ -12,6 +12,7 @@ In the diagram below, a client connected to the proxy which has 3 backend hosts.
 - Failover
 - Load balance based on latency
 - SSL termination
+- Priority based processing
 - Cross-platform compatibility (Windows, Linux, macOS)
 - Logging to Application Insights
 - Logging to EventHub
